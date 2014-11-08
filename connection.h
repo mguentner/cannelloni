@@ -35,7 +35,7 @@ namespace cannelloni {
 
 #define RECEIVE_BUFFER_SIZE 1500
 #define UDP_PAYLOAD_SIZE 1472
-#define CAN_SOCKET_TIMEOUT 2
+#define CAN_TIMEOUT 2000 /* ms */
 #define CAN_DEBUG 0
 #define UDP_DEBUG 0
 #define TIMER_DEBUG 0
@@ -81,7 +81,7 @@ class UDPThread : public Thread {
     uint32_t getTimeout();
 
   private:
-    /* This function transmits m_frameBufferSize */
+    /* This function transmits m_frameBuffer */
     void transmitBuffer();
     void fireTimer();
 
@@ -128,12 +128,26 @@ class CANThread : public Thread {
     UDPThread* getUDPThread();
 
     void transmitCANFrames(const std::vector<can_frame> &frames);
-
+  private:
+    void transmitBuffer();
+    void fireTimer();
   private:
     int m_canSocket;
+    /*
+     * We use the timerfd API of the Linux Kernel to send
+     * m_frameBuffer periodically
+     */
+    int m_timerfd;
+
+    /* When filling/swapping the buffers we currently need a mutex */
+    std::mutex m_bufferMutex;
+
     struct sockaddr_can m_localAddr;
     std::string m_canInterfaceName;
     UDPThread *m_udpThread;
+    /* FIFO Buffer of frames */
+    std::vector<can_frame> *m_frameBuffer;
+    std::vector<can_frame> *m_frameBuffer_trans;
     /* Performance Counters */
     uint64_t m_rxCount;
     uint64_t m_txCount;

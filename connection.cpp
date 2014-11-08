@@ -356,6 +356,8 @@ CANThread::CANThread(const std::string &canInterfaceName = "can0")
   : Thread()
   , m_canInterfaceName(canInterfaceName)
   , m_udpThread(NULL)
+  , m_frameBuffer(new std::vector<can_frame>)
+  , m_frameBuffer_trans(new std::vector<can_frame>)
   , m_rxCount(0)
   , m_txCount(0)
 {
@@ -383,15 +385,12 @@ int CANThread::start() {
     lerror << "Could not bind to interface" << std::endl;
     return -1;
   }
-  /*
-   * Somehow performing shutdown on a PF_CAN socket results in EOPNOTSUPP,
-   * therefore we use a timeout to exit gracefully 
-   */
-  timeout.tv_sec = 2;
-  timeout.tv_usec = 0;
-  if (setsockopt (m_canSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0)
-    lerror << "setsockopt on can socket failed" << std::endl;
-
+  /* Create timerfd */
+  m_timerfd = timerfd_create(CLOCK_REALTIME, 0);
+  if (m_timerfd < 0) {
+    lerror << "timerfd_create error" << std::endl;
+    return -1;
+  }
   return Thread::start();
 }
 
@@ -403,41 +402,82 @@ void CANThread::stop() {
    * the socket to interrupt the loop
    */
   shutdown(m_canSocket, SHUT_RDWR);
+  fireTimer();
   close(m_canSocket);
   Thread::stop();
 }
 
 void CANThread::run() {
+  fd_set readfds;
   ssize_t receivedBytes;
   struct can_frame frame;
+  struct itimerspec ts;
+
   linfo << "CANThread up and running" << std::endl;
+
+  /* Prepare timerfd for the first time*/
+  ts.it_interval.tv_sec = CAN_TIMEOUT/1000;
+  ts.it_interval.tv_nsec = (CAN_TIMEOUT%1000)*1000000;
+  ts.it_value.tv_sec = CAN_TIMEOUT/1000;
+  ts.it_value.tv_nsec = (CAN_TIMEOUT%1000)*1000000;
+  timerfd_settime(m_timerfd, 0, &ts, NULL);
+
   while (m_started) {
-    receivedBytes = recv(m_canSocket, &frame, sizeof(struct can_frame), 0);
-    if (receivedBytes < 0) {
-      if (errno == EWOULDBLOCK || errno == EAGAIN) {
-        /* Timeout occured */
-        continue;
-      } else {
-        lerror << "CAN read error" << std::endl;
-        return;
+    /* Prepare readfds */
+    FD_ZERO(&readfds);
+    FD_SET(m_canSocket, &readfds);
+    FD_SET(m_timerfd, &readfds);
+
+    int ret = select(std::max(m_canSocket,m_timerfd)+1, &readfds, NULL, NULL, NULL);
+    if (ret < 0) {
+      lerror << "select error" << std::endl;
+      break;
+    }
+    if (FD_ISSET(m_timerfd, &readfds)) {
+      ssize_t readBytes;
+      uint64_t numExp;
+      /* read from timer */
+      readBytes = read(m_timerfd, &numExp, sizeof(uint64_t));
+      if (readBytes != sizeof(uint64_t)) {
+        lerror << "timerfd read error" << std::endl;
+        break;
       }
-    } else if (receivedBytes < sizeof(struct can_frame) || receivedBytes == 0) {
-      lwarn << "Incomplete CAN frame" << std::endl;
-    } else if (receivedBytes) {
+      if (numExp > 1) {
+        lwarn << "timer overflow" << std::endl;
+      }
+      if (numExp) {
+        /* We transmit our buffer */
+        transmitBuffer();
+      }
+    }
+    if (FD_ISSET(m_canSocket, &readfds)) {
+      receivedBytes = recv(m_canSocket, &frame, sizeof(struct can_frame), 0);
+      if (receivedBytes < 0) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+          /* Timeout occured */
+          continue;
+        } else {
+          lerror << "CAN read error" << std::endl;
+          return;
+        }
+      } else if (receivedBytes < sizeof(struct can_frame) || receivedBytes == 0) {
+        lwarn << "Incomplete CAN frame" << std::endl;
+      } else if (receivedBytes) {
 #if CAN_DEBUG
-      if (frame.can_id & CAN_EFF_FLAG)
-        std::cout << "EFF Frame ID[" << (frame.can_id & CAN_EFF_MASK)
-                                     << "]\t Length:" << (int) frame.can_dlc << "\t";
-      else
-        std::cout << "SFF Frame ID[" << (frame.can_id & CAN_SFF_MASK)
-                                     << "]\t Length:" << (int) frame.can_dlc << "\t";
-      for (uint8_t i=0; i<frame.can_dlc; i++)
-        std::cout << std::setbase(16) << " " << int(frame.data[i]);
-      std::cout << std::endl;
+        if (frame.can_id & CAN_EFF_FLAG)
+          std::cout << "EFF Frame ID[" << (frame.can_id & CAN_EFF_MASK)
+                                       << "]\t Length:" << (int) frame.can_dlc << "\t";
+        else
+          std::cout << "SFF Frame ID[" << (frame.can_id & CAN_SFF_MASK)
+                                       << "]\t Length:" << (int) frame.can_dlc << "\t";
+        for (uint8_t i=0; i<frame.can_dlc; i++)
+          std::cout << std::setbase(16) << " " << int(frame.data[i]);
+        std::cout << std::endl;
 #endif
-      m_rxCount++;
-      if (m_udpThread != NULL)
-        m_udpThread->sendCANFrame(frame);
+        m_rxCount++;
+        if (m_udpThread != NULL)
+          m_udpThread->sendCANFrame(frame);
+      }
     }
   }
 }
@@ -451,8 +491,19 @@ UDPThread* CANThread::getUDPThread() {
 }
 
 void CANThread::transmitCANFrames(const std::vector<can_frame> &frames) {
+  m_bufferMutex.lock();
+  m_frameBuffer->insert(m_frameBuffer->end(), frames.begin(), frames.end());
+  m_bufferMutex.unlock();
+  fireTimer();
+}
+
+void CANThread::transmitBuffer() {
   ssize_t transmittedBytes = 0;
-  for (can_frame frame : frames) {
+  /* Swap buffers */
+  m_bufferMutex.lock();
+  std::swap(m_frameBuffer, m_frameBuffer_trans);
+  m_bufferMutex.unlock();
+  for (can_frame frame : *m_frameBuffer_trans) {
     transmittedBytes = write(m_canSocket, &frame, sizeof(frame));
     if (transmittedBytes != sizeof(frame)) {
       lerror << "CAN write failed" << std::endl;
@@ -460,4 +511,15 @@ void CANThread::transmitCANFrames(const std::vector<can_frame> &frames) {
       m_txCount++;
     }
   }
+  m_frameBuffer_trans->clear();
+}
+
+void CANThread::fireTimer() {
+  struct itimerspec ts;
+  /* Reset the timer of m_timerfd to m_timeout */
+  ts.it_interval.tv_sec = CAN_TIMEOUT/1000;
+  ts.it_interval.tv_nsec = (CAN_TIMEOUT%1000)*1000000;
+  ts.it_value.tv_sec = 0;
+  ts.it_value.tv_nsec = 1000;
+  timerfd_settime(m_timerfd, 0, &ts, NULL);
 }
