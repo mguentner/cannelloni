@@ -23,10 +23,12 @@
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
-#include <sys/signalfd.h>
-#include <netinet/in.h>
+
 #include <net/if.h>
+#include <netinet/in.h>
 #include <arpa/inet.h>
+
+#include <sys/signalfd.h>
 
 #include "connection.h"
 #include "logging.h"

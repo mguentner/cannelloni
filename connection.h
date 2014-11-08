@@ -23,8 +23,12 @@
 #include <set>
 #include <vector>
 #include <mutex>
+
+#include <stdint.h>
+
 #include <sys/types.h>
 #include <netinet/in.h>
+
 #include "can.h"
 
 namespace cannelloni {
