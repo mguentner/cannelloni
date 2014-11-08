@@ -302,7 +302,7 @@ void UDPThread::transmitBuffer() {
   std::swap(m_frameBuffer, m_frameBuffer_trans);
   m_bufferMutex.unlock();
 
-  for (auto it = m_frameBuffer_trans->begin(); it != m_frameBuffer_trans->end(); it++) {
+  for (auto it = m_frameBuffer_trans->begin(); it != m_frameBuffer_trans->end();) {
     auto &frame = *it;
     /* Check for packet overflow */
     if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc) > UDP_PAYLOAD_SIZE) {
@@ -315,8 +315,9 @@ void UDPThread::transmitBuffer() {
       memcpy(data, frame.data, frame.can_dlc);
       data+=frame.can_dlc;
       frameCount++;
-      m_frameBufferSize_trans-= (CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc);
-      m_frameBuffer_trans->erase(it);
+      m_frameBufferSize_trans -= (CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc);
+      /* Attention: This is our increment function...we need to remove this! */
+      it = m_frameBuffer_trans->erase(it);
     }
   }
   dataPacket->count = frameCount;
