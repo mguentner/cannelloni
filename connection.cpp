@@ -85,8 +85,9 @@ UDPThread::UDPThread(const struct sockaddr_in &remoteAddr,
   , m_frameBuffer(new std::multiset<can_frame, can_frame_comp>)
   , m_frameBuffer_trans(new std::multiset<can_frame, can_frame_comp>)
   , m_sequenceNumber(0)
-  , m_lastTransmit(0)
   , m_timeout(100)
+  , m_rxCount(0)
+  , m_txCount(0)
 {
   memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_in));
   memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_in));
@@ -103,11 +104,17 @@ int UDPThread::start() {
     lerror << "Could not bind to address" << std::endl;
     return -1;
   }
+  /* Create timerfd */
+  m_timerfd = timerfd_create(CLOCK_REALTIME, 0);
+  if (m_timerfd < 0) {
+    lerror << "timerfd_create error" << std::endl;
+    return -1;
+  }
   return Thread::start();
 }
 
 void UDPThread::stop() {
-  linfo << "Stop called!" << std::endl;
+  linfo << "Shutting down. UDP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
   /* Close socket to interrupt recvfrom in run() */
   shutdown(m_udpSocket, SHUT_RDWR);
   close(m_udpSocket);
@@ -115,90 +122,135 @@ void UDPThread::stop() {
 }
 
 void UDPThread::run() {
-  int16_t receivedBytes;
+  fd_set readfds;
+  ssize_t receivedBytes;
   uint8_t buffer[RECEIVE_BUFFER_SIZE];
   struct sockaddr_in clientAddr;
   socklen_t clientAddrLen = sizeof(struct sockaddr_in);
   char clientAddrStr[INET_ADDRSTRLEN];
 
+  struct itimerspec ts;
+
   linfo << "UDPThread up and running" << std::endl;
+  /* Prepare timerfd for the first time*/
+  ts.it_interval.tv_sec = m_timeout/1000;
+  ts.it_interval.tv_nsec = (m_timeout%1000)*1000000;
+  ts.it_value.tv_sec = m_timeout/1000;
+  ts.it_value.tv_nsec = (m_timeout%1000)*1000000;
+  timerfd_settime(m_timerfd, 0, &ts, NULL);
+
   while (m_started) {
-    /* Clear buffer */
-    memset(buffer, 0, RECEIVE_BUFFER_SIZE);
-    receivedBytes = recvfrom(m_udpSocket, buffer, RECEIVE_BUFFER_SIZE,
-        0, (struct sockaddr *) &clientAddr, &clientAddrLen);
-    if (receivedBytes < 0) {
-      lerror << "recvfrom error." << std::endl;
-      return;
-    } else if (receivedBytes > 0) {
-      if (inet_ntop(AF_INET, &clientAddr.sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL) {
-        lwarn << "Could not convert client address" << std::endl;
-      } else {
-          if (memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
-            lwarn << "Received a packet from " << clientAddrStr 
-                  << ", which is not set as a remote." << std::endl;
-          } else {
-            bool drop = false;
-            struct UDPDataPacket *data;
-            /* We expect the packet to be sorted, so we can just use a vector */
-            std::vector<can_frame> canFrames;
-            /* Check for OP Code */
-            data = (struct UDPDataPacket*) buffer;
-            if (data->version != CANNELLONI_FRAME_VERSION) {
-              lwarn << "Received wrong version" << std::endl;
-              drop = true;
-            }
-            if (data->op_code != DATA) {
-              lwarn << "Received wrong OP code" << std::endl;
-              drop = true;
-            }
-            if (data->count == 0) {
-              linfo << "Received empty packet" << std::endl;
-              drop = true;
-            }
-            if (!drop) {
-              uint8_t *rawData = buffer+UDP_DATA_PACKET_BASE_SIZE;
-              bool error;
+    /* Prepare readfds */
+    FD_ZERO(&readfds);
+    FD_SET(m_udpSocket, &readfds);
+    FD_SET(m_timerfd, &readfds);
+    int ret = select(std::max(m_udpSocket,m_timerfd)+1, &readfds, NULL, NULL, NULL);
+    if (ret < 0) {
+      lerror << "select error" << std::endl;
+      break;
+    }
+    if (FD_ISSET(m_timerfd, &readfds)) {
+      ssize_t readBytes;
+      uint64_t numExp;
+      /* read from timer */
+      readBytes = read(m_timerfd, &numExp, sizeof(uint64_t));
+      if (readBytes != sizeof(uint64_t)) {
+        lerror << "timerfd read error" << std::endl;
+        break;
+      }
+      if (numExp > 1) {
+        lwarn << "timer overflow" << std::endl;
+      }
+      if (numExp) {
+#if TIMER_DEBUG
+        struct timeval currentTime;
+        gettimeofday(&currentTime, NULL);
+        linfo << "Timer exp:" << currentTime.tv_sec << " " << currentTime.tv_usec << std::endl;
+#endif
+        if (m_frameBuffer->size()) {
+          transmitBuffer();
+        }
+      }
+    }
+    if (FD_ISSET(m_udpSocket, &readfds)) {
+      /* Clear buffer */
+      memset(buffer, 0, RECEIVE_BUFFER_SIZE);
+      receivedBytes = recvfrom(m_udpSocket, buffer, RECEIVE_BUFFER_SIZE,
+          0, (struct sockaddr *) &clientAddr, &clientAddrLen);
+      if (receivedBytes < 0) {
+        lerror << "recvfrom error." << std::endl;
+        return;
+      } else if (receivedBytes > 0) {
+        if (inet_ntop(AF_INET, &clientAddr.sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL) {
+          lwarn << "Could not convert client address" << std::endl;
+        } else {
+            if (memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
+              lwarn << "Received a packet from " << clientAddrStr
+                    << ", which is not set as a remote." << std::endl;
+            } else {
+              bool drop = false;
+              struct UDPDataPacket *data;
+              /* We expect the packet to be sorted, so we can just use a vector */
+              std::vector<can_frame> canFrames;
+              /* Check for OP Code */
+              data = (struct UDPDataPacket*) buffer;
+              if (data->version != CANNELLONI_FRAME_VERSION) {
+                lwarn << "Received wrong version" << std::endl;
+                drop = true;
+              }
+              if (data->op_code != DATA) {
+                lwarn << "Received wrong OP code" << std::endl;
+                drop = true;
+              }
+              if (data->count == 0) {
+                linfo << "Received empty packet" << std::endl;
+                drop = true;
+              }
+              if (!drop) {
+                uint8_t *rawData = buffer+UDP_DATA_PACKET_BASE_SIZE;
+                bool error;
 #if UDP_DEBUG
-              linfo << "Received " << receivedBytes << " Bytes from Host " << clientAddrStr
-                << ":" << ntohs(clientAddr.sin_port) << std::endl;
+                linfo << "Received " << receivedBytes << " Bytes from Host " << clientAddrStr
+                  << ":" << ntohs(clientAddr.sin_port) << std::endl;
 #endif
-              for (uint8_t i=0; i<data->count; i++) {
-                if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > receivedBytes) {
-                  lerror << "Received incomplete packet" << std::endl;
-                  error = true;
-                  break;
-                }
-                /* We got at least a complete can_frame header */
-                can_frame frame;
-                frame.can_id = ntohl(*((uint32_t*)rawData));
-                rawData+=4;
-                frame.can_dlc = *rawData;
-                rawData+=1;
-                /* Check again now that we know the dlc */
-                if (rawData-buffer+frame.can_dlc > receivedBytes) {
-                  lerror << "Received incomplete packet / can header corrupt!" << std::endl;
-                  error = true;
-                  break;
-                }
-                memcpy(frame.data, rawData, frame.can_dlc);
-                canFrames.push_back(frame);
-                rawData+=frame.can_dlc;
+                m_rxCount++;
+                for (uint8_t i=0; i<data->count; i++) {
+                  if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > receivedBytes) {
+                    lerror << "Received incomplete packet" << std::endl;
+                    error = true;
+                    break;
+                  }
+                  /* We got at least a complete can_frame header */
+                  can_frame frame;
+                  frame.can_id = ntohl(*((uint32_t*)rawData));
+                  rawData+=4;
+                  frame.can_dlc = *rawData;
+                  rawData+=1;
+                  /* Check again now that we know the dlc */
+                  if (rawData-buffer+frame.can_dlc > receivedBytes) {
+                    lerror << "Received incomplete packet / can header corrupt!" << std::endl;
+                    error = true;
+                    break;
+                  }
+                  memcpy(frame.data, rawData, frame.can_dlc);
+                  canFrames.push_back(frame);
+                  rawData+=frame.can_dlc;
 #if CAN_DEBUG
-                if (frame.can_id & CAN_EFF_FLAG)
-                  std::cout << "EFF Frame ID[" << (frame.can_id & CAN_EFF_MASK)
-                                               << "]\t Length:" << (int) frame.can_dlc << "\t";
-                else
-                  std::cout << "SFF Frame ID[" << (frame.can_id & CAN_SFF_MASK)
-                                               << "]\t Length:" << (int) frame.can_dlc << "\t";
-                for (uint8_t i=0; i<frame.can_dlc; i++)
-                  std::cout << std::setbase(16) << " " << int(frame.data[i]);
-                std::cout << std::endl;
+                  if (frame.can_id & CAN_EFF_FLAG)
+                    std::cout << "EFF Frame ID[" << (frame.can_id & CAN_EFF_MASK)
+                                                 << "]\t Length:" << (int) frame.can_dlc << "\t";
+                  else
+                    std::cout << "SFF Frame ID[" << (frame.can_id & CAN_SFF_MASK)
+                                                 << "]\t Length:" << (int) frame.can_dlc << "\t";
+                  for (uint8_t i=0; i<frame.can_dlc; i++)
+                    std::cout << std::setbase(16) << " " << int(frame.data[i]);
+                  std::cout << std::endl;
 #endif
-                m_canThread->transmitCANFrames(canFrames);
+                  }
+                  m_canThread->transmitCANFrames(canFrames);
               }
             }
-          }
+        }
       }
     }
   }
@@ -213,48 +265,13 @@ CANThread* UDPThread::getCANThread() {
 }
 
 void UDPThread::sendCANFrame(const can_frame &frame) {
-  bool insertLater = false;
-  bool transmit = false;
-  struct timeval currentTime;
-  uint64_t currentTimeMs;
-  if (m_frameBufferSize +
-      CANNELLONI_FRAME_BASE_SIZE +
-      frame.can_dlc +
-      UDP_DATA_PACKET_BASE_SIZE > UDP_PAYLOAD_SIZE) {
-    /* Buffer is too full for this packet */
-    insertLater = true;
-    transmit = true;
-  } else {
-    m_bufferMutex.lock();
-    m_frameBuffer->insert(frame);
-    m_frameBufferSize += CANNELLONI_FRAME_BASE_SIZE + frame.can_dlc;
-    m_bufferMutex.unlock();
-    if (m_frameBufferSize + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
-      transmit = true;
-    }
+  m_bufferMutex.lock();
+  m_frameBuffer->insert(frame);
+  m_frameBufferSize += CANNELLONI_FRAME_BASE_SIZE + frame.can_dlc;
+  if (m_frameBufferSize + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
+    fireTimer();
   }
-  /* Check if we have a timeout */
-  gettimeofday(&currentTime, NULL);
-  currentTimeMs = currentTime.tv_sec*1000;
-  currentTimeMs += currentTime.tv_usec/1000;
-  if (currentTimeMs - m_lastTransmit > m_timeout) {
-    transmit = true;
-  }
-  if (transmit) {
-    m_bufferMutex.lock();
-    /* Swap both buffer and counters */
-    std::swap(m_frameBuffer, m_frameBuffer_trans);
-    std::swap(m_frameBufferSize, m_frameBufferSize_trans);
-    m_bufferMutex.unlock();
-    transmitBuffer();
-  }
-  /* If insertLater is set, we still need to insert the frame */
-  if (insertLater) {
-    m_bufferMutex.lock();
-    m_frameBuffer->insert(frame);
-    m_frameBufferSize += CANNELLONI_FRAME_BASE_SIZE + frame.can_dlc;
-    m_bufferMutex.unlock();
-  }
+  m_bufferMutex.unlock();
 }
 
 void UDPThread::setTimeout(uint32_t timeout) {
@@ -273,16 +290,19 @@ void UDPThread::transmitBuffer() {
   struct UDPDataPacket *dataPacket;
   struct timeval currentTime;
 
+
   dataPacket = (struct UDPDataPacket*) packetBuffer;
   dataPacket->version = CANNELLONI_FRAME_VERSION;
   dataPacket->op_code = DATA;
   dataPacket->seq_no = m_sequenceNumber++;
   /* We initialize dataPacket->count later */
   data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
-  for (can_frame frame : *m_frameBuffer_trans) {
+  m_bufferMutex.lock();
+  for (auto it = m_frameBuffer->begin(); it != m_frameBuffer->end(); it++) {
+    auto &frame = *it;
     /* Check for packet overflow */
     if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc) > UDP_PAYLOAD_SIZE) {
-      lwarn << "Buffer overflow, one CAN frame has been lost" << std::endl;
+      break;
     } else {
       *((canid_t *) (data)) = htonl(frame.can_id);
       data+=4;
@@ -291,27 +311,38 @@ void UDPThread::transmitBuffer() {
       memcpy(data, frame.data, frame.can_dlc);
       data+=frame.can_dlc;
       frameCount++;
+      m_frameBufferSize-= (CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc);
+      m_frameBuffer->erase(it);
     }
   }
+  m_bufferMutex.unlock();
   dataPacket->count = frameCount;
   transmittedBytes = sendto(m_udpSocket, packetBuffer, data-packetBuffer, 0,
       (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
   if (transmittedBytes != data-packetBuffer) {
-      lerror << "UDP Socket error. Error while transmitting" << std::endl;
+    lerror << "UDP Socket error. Error while transmitting" << std::endl;
+  } else {
+    m_txCount++;
   }
-  gettimeofday(&currentTime, NULL);
-  /* We want milliseconds */
-  m_lastTransmit = currentTime.tv_sec*1000;
-  m_lastTransmit += currentTime.tv_usec/1000;
-  m_frameBufferSize_trans = 0;
-  m_frameBuffer_trans->clear();
   delete[] packetBuffer;
+}
+
+void UDPThread::fireTimer() {
+  struct itimerspec ts;
+  /* Reset the timer of m_timerfd to m_timeout */
+  ts.it_interval.tv_sec = m_timeout/1000;
+  ts.it_interval.tv_nsec = (m_timeout%1000)*1000000;
+  ts.it_value.tv_sec = 0;
+  ts.it_value.tv_nsec = 1000;
+  timerfd_settime(m_timerfd, 0, &ts, NULL);
 }
 
 CANThread::CANThread(const std::string &canInterfaceName = "can0")
   : Thread()
   , m_canInterfaceName(canInterfaceName)
   , m_udpThread(NULL)
+  , m_rxCount(0)
+  , m_txCount(0)
 {
 }
 
@@ -350,7 +381,7 @@ int CANThread::start() {
 }
 
 void CANThread::stop() {
-  linfo << "Stop called!" << std::endl;
+  linfo << "Shutting down. CAN Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
   /*
    * shutdown socket to interrupt recvfrom in run()
    * NOTE: This does currently not work, there we use a timeout on
@@ -362,7 +393,7 @@ void CANThread::stop() {
 }
 
 void CANThread::run() {
-  int16_t receivedBytes;
+  ssize_t receivedBytes;
   struct can_frame frame;
   linfo << "CANThread up and running" << std::endl;
   while (m_started) {
@@ -389,6 +420,7 @@ void CANThread::run() {
         std::cout << std::setbase(16) << " " << int(frame.data[i]);
       std::cout << std::endl;
 #endif
+      m_rxCount++;
       if (m_udpThread != NULL)
         m_udpThread->sendCANFrame(frame);
     }
@@ -404,11 +436,13 @@ UDPThread* CANThread::getUDPThread() {
 }
 
 void CANThread::transmitCANFrames(const std::vector<can_frame> &frames) {
-  int16_t transmittedBytes = 0;
+  ssize_t transmittedBytes = 0;
   for (can_frame frame : frames) {
     transmittedBytes = write(m_canSocket, &frame, sizeof(frame));
     if (transmittedBytes != sizeof(frame)) {
       lerror << "CAN write failed" << std::endl;
+    } else {
+      m_txCount++;
     }
   }
 }

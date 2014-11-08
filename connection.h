@@ -38,6 +38,7 @@ namespace cannelloni {
 #define CAN_SOCKET_TIMEOUT 2
 #define CAN_DEBUG 0
 #define UDP_DEBUG 0
+#define TIMER_DEBUG 0
 
 class Thread {
   public:
@@ -82,9 +83,16 @@ class UDPThread : public Thread {
   private:
     /* This function transmits m_frameBufferSize */
     void transmitBuffer();
+    void fireTimer();
 
   private:
     int m_udpSocket;
+    /*
+     * We use the timerfd API of the Linux Kernel to send
+     * m_frameBuffer periodically
+     */
+    int m_timerfd;
+
     CANThread *m_canThread;
     struct sockaddr_in m_localAddr;
     struct sockaddr_in m_remoteAddr;
@@ -95,15 +103,17 @@ class UDPThread : public Thread {
      */
     std::multiset<can_frame, can_frame_comp> *m_frameBuffer;
     std::multiset<can_frame, can_frame_comp> *m_frameBuffer_trans;
-    /* When swapping the buffers we currently need a mutex */
+    /* When filling/swapping the buffers we currently need a mutex */
     std::mutex m_bufferMutex;
     /* Track current frame buffer size */
     uint16_t m_frameBufferSize;
     uint16_t m_frameBufferSize_trans;
     uint8_t m_sequenceNumber;
     /* Timeout variables */
-    uint64_t m_lastTransmit;
     uint32_t m_timeout;
+    /* Performance Counters */
+    uint64_t m_rxCount;
+    uint64_t m_txCount;
 };
 
 class CANThread : public Thread {
@@ -124,6 +134,9 @@ class CANThread : public Thread {
     struct sockaddr_can m_localAddr;
     std::string m_canInterfaceName;
     UDPThread *m_udpThread;
+    /* Performance Counters */
+    uint64_t m_rxCount;
+    uint64_t m_txCount;
 };
 
 }
