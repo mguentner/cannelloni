@@ -298,7 +298,11 @@ void UDPThread::transmitBuffer() {
   /* We initialize dataPacket->count later */
   data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
   m_bufferMutex.lock();
-  for (auto it = m_frameBuffer->begin(); it != m_frameBuffer->end(); it++) {
+  std::swap(m_frameBufferSize, m_frameBufferSize_trans);
+  std::swap(m_frameBuffer, m_frameBuffer_trans);
+  m_bufferMutex.unlock();
+
+  for (auto it = m_frameBuffer_trans->begin(); it != m_frameBuffer_trans->end(); it++) {
     auto &frame = *it;
     /* Check for packet overflow */
     if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc) > UDP_PAYLOAD_SIZE) {
@@ -311,11 +315,10 @@ void UDPThread::transmitBuffer() {
       memcpy(data, frame.data, frame.can_dlc);
       data+=frame.can_dlc;
       frameCount++;
-      m_frameBufferSize-= (CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc);
-      m_frameBuffer->erase(it);
+      m_frameBufferSize_trans-= (CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc);
+      m_frameBuffer_trans->erase(it);
     }
   }
-  m_bufferMutex.unlock();
   dataPacket->count = frameCount;
   transmittedBytes = sendto(m_udpSocket, packetBuffer, data-packetBuffer, 0,
       (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
@@ -324,6 +327,17 @@ void UDPThread::transmitBuffer() {
   } else {
     m_txCount++;
   }
+  /* We are done with sending, now swap the buffers back */
+  m_bufferMutex.lock();
+  std::swap(m_frameBufferSize, m_frameBufferSize_trans);
+  std::swap(m_frameBuffer, m_frameBuffer_trans);
+  /* The buffers are swapped, we now need to merge */
+  m_frameBufferSize += m_frameBufferSize_trans;
+  m_frameBuffer->insert(m_frameBuffer_trans->begin(), m_frameBuffer_trans->end());
+  /* Both frameBuffers are now merged again, clear one */
+  m_frameBuffer_trans->clear();
+  m_frameBufferSize_trans = 0;
+  m_bufferMutex.unlock();
   delete[] packetBuffer;
 }
 
