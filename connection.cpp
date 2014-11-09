@@ -82,8 +82,8 @@ UDPThread::UDPThread(const struct sockaddr_in &remoteAddr,
   , m_canThread(NULL)
   , m_frameBufferSize(0)
   , m_frameBufferSize_trans(0)
-  , m_frameBuffer(new std::multiset<can_frame, can_frame_comp>)
-  , m_frameBuffer_trans(new std::multiset<can_frame, can_frame_comp>)
+  , m_frameBuffer(new std::list<can_frame*>)
+  , m_frameBuffer_trans(new std::list<can_frame*>)
   , m_sequenceNumber(0)
   , m_timeout(100)
   , m_rxCount(0)
@@ -94,6 +94,8 @@ UDPThread::UDPThread(const struct sockaddr_in &remoteAddr,
 }
 
 int UDPThread::start() {
+  /* Allocate entries for m_framePool */
+  resizePool(FRAME_POOL_SIZE);
   /* Setup our connection */
   m_udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
   if (m_udpSocket < 0) {
@@ -119,6 +121,11 @@ void UDPThread::stop() {
   shutdown(m_udpSocket, SHUT_RDWR);
   close(m_udpSocket);
   Thread::stop();
+  linfo << "m_framePool: " << m_framePool.size() << std::endl;
+  linfo << "m_frameBuffer: " << m_frameBuffer->size() << std::endl;
+  linfo << "m_frameBuffer_trans: " << m_frameBuffer_trans->size() << std::endl;
+  /* free all entries in m_framePool */
+  clearPool();
 }
 
 void UDPThread::run() {
@@ -265,8 +272,21 @@ CANThread* UDPThread::getCANThread() {
 }
 
 void UDPThread::sendCANFrame(const can_frame &frame) {
+  m_poolMutex.lock();
+  if (!m_framePool.size()) {
+    /* No frames available, allocating more */
+    resizePool(totalAllocCount);
+    linfo << "New Poolsize:" << m_framePool.size() << std::endl;
+  }
+  can_frame *poolFrame = m_framePool.front();
+  /* Remove element from pool */
+  m_framePool.pop_front();
+  m_poolMutex.unlock();
+  /* Copy structure */
+  memcpy(poolFrame, &frame, sizeof(can_frame));
+  /* Attach frame to frameBuffer */
   m_bufferMutex.lock();
-  m_frameBuffer->insert(frame);
+  m_frameBuffer->push_back(poolFrame);
   m_frameBufferSize += CANNELLONI_FRAME_BASE_SIZE + frame.can_dlc;
   if (m_frameBufferSize + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
     fireTimer();
@@ -302,20 +322,27 @@ void UDPThread::transmitBuffer() {
   std::swap(m_frameBuffer, m_frameBuffer_trans);
   m_bufferMutex.unlock();
 
+  /* Sort m_frameBuffer_trans */
+  m_frameBuffer_trans->sort(can_frame_comp());
+
   for (auto it = m_frameBuffer_trans->begin(); it != m_frameBuffer_trans->end();) {
-    auto &frame = *it;
+    can_frame *frame = *it;
     /* Check for packet overflow */
-    if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc) > UDP_PAYLOAD_SIZE) {
+    if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame->can_dlc) > UDP_PAYLOAD_SIZE) {
       break;
     } else {
-      *((canid_t *) (data)) = htonl(frame.can_id);
+      *((canid_t *) (data)) = htonl(frame->can_id);
       data+=4;
-      *data = frame.can_dlc;
+      *data = frame->can_dlc;
       data+=1;
-      memcpy(data, frame.data, frame.can_dlc);
-      data+=frame.can_dlc;
+      memcpy(data, frame->data, frame->can_dlc);
+      data+=frame->can_dlc;
       frameCount++;
-      m_frameBufferSize_trans -= (CANNELLONI_FRAME_BASE_SIZE+frame.can_dlc);
+      m_frameBufferSize_trans -= (CANNELLONI_FRAME_BASE_SIZE+frame->can_dlc);
+      /* Add frame back to our pool */
+      m_poolMutex.lock();
+      m_framePool.push_back(frame);
+      m_poolMutex.unlock();
       /* Attention: This is our increment function...we need to remove this! */
       it = m_frameBuffer_trans->erase(it);
     }
@@ -332,11 +359,11 @@ void UDPThread::transmitBuffer() {
   m_bufferMutex.lock();
   std::swap(m_frameBufferSize, m_frameBufferSize_trans);
   std::swap(m_frameBuffer, m_frameBuffer_trans);
-  /* The buffers are swapped, we now need to merge */
+  /* The buffers are swapped, we now need to sort the temponary list */
+  m_frameBuffer_trans->sort(can_frame_comp());
   m_frameBufferSize += m_frameBufferSize_trans;
-  m_frameBuffer->insert(m_frameBuffer_trans->begin(), m_frameBuffer_trans->end());
-  /* Both frameBuffers are now merged again, clear one */
-  m_frameBuffer_trans->clear();
+  /* Both lists are now sorted. Merge them */
+  m_frameBuffer->merge(*m_frameBuffer_trans, can_frame_comp());
   m_frameBufferSize_trans = 0;
   m_bufferMutex.unlock();
   delete[] packetBuffer;
@@ -350,6 +377,22 @@ void UDPThread::fireTimer() {
   ts.it_value.tv_sec = 0;
   ts.it_value.tv_nsec = 1000;
   timerfd_settime(m_timerfd, 0, &ts, NULL);
+}
+
+void UDPThread::resizePool(uint32_t size) {
+  for (uint32_t i=0; i<size; i++) {
+    can_frame *frame = new can_frame;
+    m_framePool.push_back(frame);
+  }
+  totalAllocCount += size;
+}
+
+void UDPThread::clearPool() {
+  for (can_frame *f : m_framePool) {
+    delete f;
+  }
+  m_framePool.clear();
+  totalAllocCount = 0;
 }
 
 CANThread::CANThread(const std::string &canInterfaceName = "can0")

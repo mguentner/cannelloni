@@ -59,20 +59,20 @@ struct UDPACKPacket {
  */
 struct can_frame_comp
 {
-  bool operator() (const struct can_frame &f1,
-                   const struct can_frame &f2) const
+  inline bool operator() (const struct can_frame *f1,
+                          const struct can_frame *f2) const
   {
     canid_t id1, id2;
     /* Be extra careful when doing the comparision */
-    if (f1.can_id & CAN_EFF_FLAG)
-      id1 = f1.can_id & CAN_EFF_MASK;
+    if (f1->can_id & CAN_EFF_FLAG)
+      id1 = f1->can_id & CAN_EFF_MASK;
     else
-      id1 = f1.can_id & CAN_SFF_MASK;
+      id1 = f1->can_id & CAN_SFF_MASK;
 
-    if (f2.can_id & CAN_EFF_FLAG)
-      id2 = f2.can_id & CAN_EFF_MASK;
+    if (f2->can_id & CAN_EFF_FLAG)
+      id2 = f2->can_id & CAN_EFF_MASK;
     else
-      id2 = f2.can_id & CAN_SFF_MASK;
+      id2 = f2->can_id & CAN_SFF_MASK;
     return id1 < id2;
   }
 };

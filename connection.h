@@ -20,8 +20,8 @@
 #pragma once
 
 #include <thread>
-#include <set>
 #include <vector>
+#include <list>
 #include <mutex>
 
 #include <stdint.h>
@@ -36,6 +36,7 @@ namespace cannelloni {
 #define RECEIVE_BUFFER_SIZE 1500
 #define UDP_PAYLOAD_SIZE 1472
 #define CAN_TIMEOUT 2000 /* ms */
+#define FRAME_POOL_SIZE 1000
 #define CAN_DEBUG 0
 #define UDP_DEBUG 0
 #define TIMER_DEBUG 0
@@ -84,6 +85,8 @@ class UDPThread : public Thread {
     /* This function transmits m_frameBuffer */
     void transmitBuffer();
     void fireTimer();
+    void resizePool(uint32_t size);
+    void clearPool();
 
   private:
     int m_udpSocket;
@@ -101,10 +104,15 @@ class UDPThread : public Thread {
      * Thread. Once a timeout occurs or a packet is
      * full, this buffer gets sent to remoteAddr
      */
-    std::multiset<can_frame, can_frame_comp> *m_frameBuffer;
-    std::multiset<can_frame, can_frame_comp> *m_frameBuffer_trans;
+    std::list<can_frame*> m_framePool;
+    std::list<can_frame*> *m_frameBuffer;
+    std::list<can_frame*> *m_frameBuffer_trans;
+
+    uint64_t totalAllocCount;
     /* When filling/swapping the buffers we currently need a mutex */
     std::mutex m_bufferMutex;
+    std::mutex m_poolMutex;
+
     /* Track current frame buffer size */
     uint16_t m_frameBufferSize;
     uint16_t m_frameBufferSize_trans;
