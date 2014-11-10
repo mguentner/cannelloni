@@ -279,14 +279,12 @@ void UDPThread::sendCANFrame(const can_frame &frame) {
 #endif
   }
   can_frame *poolFrame = m_framePool.front();
-  /* Remove element from pool */
-  m_framePool.pop_front();
-  m_poolMutex.unlock();
   /* Copy structure */
   memcpy(poolFrame, &frame, sizeof(can_frame));
-  /* Attach frame to frameBuffer */
   m_bufferMutex.lock();
-  m_frameBuffer->push_back(poolFrame);
+  /* Splice frame from m_framePool into m_frameBuffer */
+  m_frameBuffer->splice(m_frameBuffer->end(), m_framePool, m_framePool.begin());
+  m_poolMutex.unlock();
   m_frameBufferSize += CANNELLONI_FRAME_BASE_SIZE + frame.can_dlc;
   if (m_frameBufferSize + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
     fireTimer();
