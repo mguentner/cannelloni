@@ -121,9 +121,11 @@ void UDPThread::stop() {
   shutdown(m_udpSocket, SHUT_RDWR);
   close(m_udpSocket);
   Thread::stop();
+#if BUFFER_DEBUG
   linfo << "m_framePool: " << m_framePool.size() << std::endl;
   linfo << "m_frameBuffer: " << m_frameBuffer->size() << std::endl;
   linfo << "m_frameBuffer_trans: " << m_frameBuffer_trans->size() << std::endl;
+#endif
   /* free all entries in m_framePool */
   clearPool();
 }
@@ -165,18 +167,14 @@ void UDPThread::run() {
         lerror << "timerfd read error" << std::endl;
         break;
       }
-      if (numExp > 1) {
-        lwarn << "timer overflow" << std::endl;
-      }
       if (numExp) {
 #if TIMER_DEBUG
         struct timeval currentTime;
         gettimeofday(&currentTime, NULL);
-        linfo << "Timer exp:" << currentTime.tv_sec << " " << currentTime.tv_usec << std::endl;
+        linfo << "Timer numExp:" << numExp << "@" << currentTime.tv_sec << " " << currentTime.tv_usec << std::endl;
 #endif
-        if (m_frameBuffer->size()) {
+        if (m_frameBufferSize)
           transmitBuffer();
-        }
       }
     }
     if (FD_ISSET(m_udpSocket, &readfds)) {
@@ -209,7 +207,7 @@ void UDPThread::run() {
                 lwarn << "Received wrong OP code" << std::endl;
                 drop = true;
               }
-              if (data->count == 0) {
+              if (ntohs(data->count) == 0) {
                 linfo << "Received empty packet" << std::endl;
                 drop = true;
               }
@@ -221,7 +219,7 @@ void UDPThread::run() {
                   << ":" << ntohs(clientAddr.sin_port) << std::endl;
 #endif
                 m_rxCount++;
-                for (uint8_t i=0; i<data->count; i++) {
+                for (uint16_t i=0; i<ntohs(data->count); i++) {
                   if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > receivedBytes) {
                     lerror << "Received incomplete packet" << std::endl;
                     error = true;
@@ -273,10 +271,12 @@ CANThread* UDPThread::getCANThread() {
 
 void UDPThread::sendCANFrame(const can_frame &frame) {
   m_poolMutex.lock();
-  if (!m_framePool.size()) {
+  if (m_framePool.empty()) {
     /* No frames available, allocating more */
-    resizePool(totalAllocCount);
-    linfo << "New Poolsize:" << m_framePool.size() << std::endl;
+    resizePool(m_totalAllocCount);
+#if BUFFER_DEBUG
+    linfo << "New Poolsize:" << m_totalAllocCount << std::endl;
+#endif
   }
   can_frame *poolFrame = m_framePool.front();
   /* Remove element from pool */
@@ -305,18 +305,11 @@ uint32_t UDPThread::getTimeout() {
 void UDPThread::transmitBuffer() {
   uint8_t *packetBuffer = new uint8_t[UDP_PAYLOAD_SIZE];
   uint8_t *data;
-  uint16_t transmittedBytes = 0;
-  uint8_t frameCount = 0;
+  ssize_t transmittedBytes = 0;
+  uint16_t frameCount = 0;
   struct UDPDataPacket *dataPacket;
   struct timeval currentTime;
 
-
-  dataPacket = (struct UDPDataPacket*) packetBuffer;
-  dataPacket->version = CANNELLONI_FRAME_VERSION;
-  dataPacket->op_code = DATA;
-  dataPacket->seq_no = m_sequenceNumber++;
-  /* We initialize dataPacket->count later */
-  data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
   m_bufferMutex.lock();
   std::swap(m_frameBufferSize, m_frameBufferSize_trans);
   std::swap(m_frameBuffer, m_frameBuffer_trans);
@@ -325,47 +318,52 @@ void UDPThread::transmitBuffer() {
   /* Sort m_frameBuffer_trans */
   m_frameBuffer_trans->sort(can_frame_comp());
 
-  for (auto it = m_frameBuffer_trans->begin(); it != m_frameBuffer_trans->end();) {
+  data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
+  for (auto it = m_frameBuffer_trans->begin(); it != m_frameBuffer_trans->end(); it++) {
     can_frame *frame = *it;
     /* Check for packet overflow */
     if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame->can_dlc) > UDP_PAYLOAD_SIZE) {
-      break;
-    } else {
-      *((canid_t *) (data)) = htonl(frame->can_id);
-      data+=4;
-      *data = frame->can_dlc;
-      data+=1;
-      memcpy(data, frame->data, frame->can_dlc);
-      data+=frame->can_dlc;
-      frameCount++;
-      m_frameBufferSize_trans -= (CANNELLONI_FRAME_BASE_SIZE+frame->can_dlc);
-      /* Add frame back to our pool */
-      m_poolMutex.lock();
-      m_framePool.push_back(frame);
-      m_poolMutex.unlock();
-      /* Attention: This is our increment function...we need to remove this! */
-      it = m_frameBuffer_trans->erase(it);
+      dataPacket = (struct UDPDataPacket*) packetBuffer;
+      dataPacket->version = CANNELLONI_FRAME_VERSION;
+      dataPacket->op_code = DATA;
+      dataPacket->seq_no = m_sequenceNumber++;
+      dataPacket->count = htons(frameCount);
+      transmittedBytes = sendto(m_udpSocket, packetBuffer, data-packetBuffer, 0,
+            (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
+      if (transmittedBytes != data-packetBuffer) {
+        lerror << "UDP Socket error. Error while transmitting" << std::endl;
+      } else {
+        m_txCount++;
+      }
+      data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
+      frameCount = 0;
     }
+    *((canid_t *) (data)) = htonl(frame->can_id);
+    data+=4;
+    *data = frame->can_dlc;
+    data+=1;
+    memcpy(data, frame->data, frame->can_dlc);
+    data+=frame->can_dlc;
+    frameCount++;
   }
-  dataPacket->count = frameCount;
+  dataPacket = (struct UDPDataPacket*) packetBuffer;
+  dataPacket->version = CANNELLONI_FRAME_VERSION;
+  dataPacket->op_code = DATA;
+  dataPacket->seq_no = m_sequenceNumber++;
+  dataPacket->count = htons(frameCount);
   transmittedBytes = sendto(m_udpSocket, packetBuffer, data-packetBuffer, 0,
-      (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
+        (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
   if (transmittedBytes != data-packetBuffer) {
     lerror << "UDP Socket error. Error while transmitting" << std::endl;
   } else {
     m_txCount++;
   }
-  /* We are done with sending, now swap the buffers back */
-  m_bufferMutex.lock();
-  std::swap(m_frameBufferSize, m_frameBufferSize_trans);
-  std::swap(m_frameBuffer, m_frameBuffer_trans);
-  /* The buffers are swapped, we now need to sort the temponary list */
-  m_frameBuffer_trans->sort(can_frame_comp());
-  m_frameBufferSize += m_frameBufferSize_trans;
-  /* Both lists are now sorted. Merge them */
-  m_frameBuffer->merge(*m_frameBuffer_trans, can_frame_comp());
+
+  /* Add frame back to our pool */
+  m_poolMutex.lock();
+  m_framePool.merge(*m_frameBuffer_trans);
   m_frameBufferSize_trans = 0;
-  m_bufferMutex.unlock();
+  m_poolMutex.unlock();
   delete[] packetBuffer;
 }
 
@@ -384,7 +382,7 @@ void UDPThread::resizePool(uint32_t size) {
     can_frame *frame = new can_frame;
     m_framePool.push_back(frame);
   }
-  totalAllocCount += size;
+  m_totalAllocCount += size;
 }
 
 void UDPThread::clearPool() {
@@ -392,7 +390,7 @@ void UDPThread::clearPool() {
     delete f;
   }
   m_framePool.clear();
-  totalAllocCount = 0;
+  m_totalAllocCount = 0;
 }
 
 CANThread::CANThread(const std::string &canInterfaceName = "can0")
@@ -484,9 +482,6 @@ void CANThread::run() {
       if (readBytes != sizeof(uint64_t)) {
         lerror << "timerfd read error" << std::endl;
         break;
-      }
-      if (numExp > 1) {
-        lwarn << "timer overflow" << std::endl;
       }
       if (numExp) {
         /* We transmit our buffer */

@@ -26,7 +26,7 @@
 namespace cannelloni {
 
 #define CANNELLONI_FRAME_BASE_SIZE 5
-#define UDP_DATA_PACKET_BASE_SIZE 4
+#define UDP_DATA_PACKET_BASE_SIZE 5
 
 #define CANNELLONI_FRAME_VERSION 1
 
@@ -40,7 +40,7 @@ struct UDPDataPacket {
   /* Sequence Number */
   uint8_t seq_no;
   /* Number of CAN Messages in this packet */
-  uint8_t count;
+  uint16_t count;
 };
 
 /* This packet serves for both ACK and NACK */

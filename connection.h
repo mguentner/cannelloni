@@ -40,6 +40,7 @@ namespace cannelloni {
 #define CAN_DEBUG 0
 #define UDP_DEBUG 0
 #define TIMER_DEBUG 0
+#define BUFFER_DEBUG 0
 
 class Thread {
   public:
@@ -108,14 +109,14 @@ class UDPThread : public Thread {
     std::list<can_frame*> *m_frameBuffer;
     std::list<can_frame*> *m_frameBuffer_trans;
 
-    uint64_t totalAllocCount;
+    uint64_t m_totalAllocCount;
     /* When filling/swapping the buffers we currently need a mutex */
     std::mutex m_bufferMutex;
     std::mutex m_poolMutex;
 
     /* Track current frame buffer size */
-    uint16_t m_frameBufferSize;
-    uint16_t m_frameBufferSize_trans;
+    uint64_t m_frameBufferSize;
+    uint64_t m_frameBufferSize_trans;
     uint8_t m_sequenceNumber;
     /* Timeout variables */
     uint32_t m_timeout;
