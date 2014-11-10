@@ -286,7 +286,7 @@ void UDPThread::transmitBuffer() {
   uint8_t *packetBuffer = new uint8_t[UDP_PAYLOAD_SIZE];
   uint8_t *data;
   uint16_t transmittedBytes = 0;
-  uint8_t frameCount;
+  uint8_t frameCount = 0;
   struct UDPDataPacket *dataPacket;
   struct timeval currentTime;
 
