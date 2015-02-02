@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
   int opt;
   bool remoteIPSupplied = false;
   char remoteIP[INET_ADDRSTRLEN] = "127.0.0.1";
-  uint16_t remotePort = 20001;
+  uint16_t remotePort = 20000;
   char localIP[INET_ADDRSTRLEN] = "0.0.0.0";
   uint16_t localPort = 20000;
   std::string canInterface = "vcan0";
