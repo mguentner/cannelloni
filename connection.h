@@ -37,10 +37,13 @@ namespace cannelloni {
 #define UDP_PAYLOAD_SIZE 1472
 #define CAN_TIMEOUT 2000 /* ms */
 #define FRAME_POOL_SIZE 1000
-#define CAN_DEBUG 0
-#define UDP_DEBUG 0
-#define TIMER_DEBUG 0
-#define BUFFER_DEBUG 0
+
+struct debugOptions_t {
+  uint8_t can    : 1;
+  uint8_t udp    : 1;
+  uint8_t buffer : 1;
+  uint8_t timer  : 1;
+};
 
 class Thread {
   public:
@@ -68,7 +71,8 @@ class CANThread;
 
 class UDPThread : public Thread {
   public:
-    UDPThread(const struct sockaddr_in &remoteAddr,
+    UDPThread(const struct debugOptions_t &debugOptions,
+              const struct sockaddr_in &remoteAddr,
               const struct sockaddr_in &localAddr);
 
     virtual int start();
@@ -90,6 +94,7 @@ class UDPThread : public Thread {
     void clearPool();
 
   private:
+    struct debugOptions_t m_debugOptions;
     int m_udpSocket;
     /*
      * We use the timerfd API of the Linux Kernel to send
@@ -127,7 +132,8 @@ class UDPThread : public Thread {
 
 class CANThread : public Thread {
   public:
-    CANThread(const std::string &canInterfaceName);
+    CANThread(const struct debugOptions_t &debugOptions,
+              const std::string &canInterfaceName);
 
     virtual int start();
     virtual void stop();
@@ -141,6 +147,7 @@ class CANThread : public Thread {
     void transmitBuffer();
     void fireTimer();
   private:
+    struct debugOptions_t m_debugOptions;
     int m_canSocket;
     /*
      * We use the timerfd API of the Linux Kernel to send

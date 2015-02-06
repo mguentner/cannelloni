@@ -21,7 +21,7 @@
 #pragma once
 #include <iostream>
 
-#define FUNCTION_STRING __FILE__ << "[" <<  __LINE__ << "]:" << __FUNCTION__ << ":"
+#define FUNCTION_STRING __FILE__ << "[" << std::dec <<  __LINE__ << "]:" << __FUNCTION__ << ":"
 #define INFO_STRING "INFO:"
 #define ERROR_STRING "ERROR:"
 #define WARNING_STRING "WARNING:"

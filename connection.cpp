@@ -76,7 +76,8 @@ void Thread::privRun() {
 }
 
 
-UDPThread::UDPThread(const struct sockaddr_in &remoteAddr,
+UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
+                     const struct sockaddr_in &remoteAddr,
                      const struct sockaddr_in &localAddr)
   : Thread()
   , m_canThread(NULL)
@@ -89,6 +90,7 @@ UDPThread::UDPThread(const struct sockaddr_in &remoteAddr,
   , m_rxCount(0)
   , m_txCount(0)
 {
+  memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
   memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_in));
   memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_in));
 }
@@ -121,11 +123,11 @@ void UDPThread::stop() {
   shutdown(m_udpSocket, SHUT_RDWR);
   close(m_udpSocket);
   Thread::stop();
-#if BUFFER_DEBUG
-  linfo << "m_framePool: " << m_framePool.size() << std::endl;
-  linfo << "m_frameBuffer: " << m_frameBuffer->size() << std::endl;
-  linfo << "m_frameBuffer_trans: " << m_frameBuffer_trans->size() << std::endl;
-#endif
+  if (m_debugOptions.buffer) {
+    linfo << "m_framePool: " << m_framePool.size() << std::endl;
+    linfo << "m_frameBuffer: " << m_frameBuffer->size() << std::endl;
+    linfo << "m_frameBuffer_trans: " << m_frameBuffer_trans->size() << std::endl;
+  }
   /* free all entries in m_framePool */
   clearPool();
 }
@@ -168,11 +170,11 @@ void UDPThread::run() {
         break;
       }
       if (numExp) {
-#if TIMER_DEBUG
-        struct timeval currentTime;
-        gettimeofday(&currentTime, NULL);
-        linfo << "Timer numExp:" << numExp << "@" << currentTime.tv_sec << " " << currentTime.tv_usec << std::endl;
-#endif
+        if (m_debugOptions.timer) {
+          struct timeval currentTime;
+          gettimeofday(&currentTime, NULL);
+          linfo << "Timer numExp:" << numExp << "@" << currentTime.tv_sec << " " << currentTime.tv_usec << std::endl;
+        }
         if (m_frameBufferSize)
           transmitBuffer();
       }
@@ -214,10 +216,10 @@ void UDPThread::run() {
               if (!drop) {
                 uint8_t *rawData = buffer+UDP_DATA_PACKET_BASE_SIZE;
                 bool error;
-#if UDP_DEBUG
-                linfo << "Received " << receivedBytes << " Bytes from Host " << clientAddrStr
-                  << ":" << ntohs(clientAddr.sin_port) << std::endl;
-#endif
+                if (m_debugOptions.udp) {
+                  linfo << "Received " << std::dec << receivedBytes << " Bytes from Host " << clientAddrStr
+                    << ":" << ntohs(clientAddr.sin_port) << std::endl;
+                }
                 m_rxCount++;
                 for (uint16_t i=0; i<ntohs(data->count); i++) {
                   if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > receivedBytes) {
@@ -240,19 +242,19 @@ void UDPThread::run() {
                   memcpy(frame.data, rawData, frame.can_dlc);
                   canFrames.push_back(frame);
                   rawData+=frame.can_dlc;
-#if CAN_DEBUG
-                  if (frame.can_id & CAN_EFF_FLAG)
-                    std::cout << "EFF Frame ID[" << (frame.can_id & CAN_EFF_MASK)
-                                                 << "]\t Length:" << (int) frame.can_dlc << "\t";
-                  else
-                    std::cout << "SFF Frame ID[" << (frame.can_id & CAN_SFF_MASK)
-                                                 << "]\t Length:" << (int) frame.can_dlc << "\t";
-                  for (uint8_t i=0; i<frame.can_dlc; i++)
-                    std::cout << std::setbase(16) << " " << int(frame.data[i]);
-                  std::cout << std::endl;
-#endif
+                  if (m_debugOptions.can) {
+                    if (frame.can_id & CAN_EFF_FLAG)
+                      std::cout << "EFF Frame ID[" << std::dec << (frame.can_id & CAN_EFF_MASK)
+                                                   << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
+                    else
+                      std::cout << "SFF Frame ID[" << std::dec << (frame.can_id & CAN_SFF_MASK)
+                                                   << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
+                    for (uint8_t i=0; i<frame.can_dlc; i++)
+                      std::cout << std::setbase(16) << " " << int(frame.data[i]);
+                    std::cout << std::endl;
                   }
-                  m_canThread->transmitCANFrames(canFrames);
+                }
+                m_canThread->transmitCANFrames(canFrames);
               }
             }
         }
@@ -274,9 +276,9 @@ void UDPThread::sendCANFrame(const can_frame &frame) {
   if (m_framePool.empty()) {
     /* No frames available, allocating more */
     resizePool(m_totalAllocCount);
-#if BUFFER_DEBUG
-    linfo << "New Poolsize:" << m_totalAllocCount << std::endl;
-#endif
+    if (m_debugOptions.buffer) {
+      linfo << "New Poolsize:" << m_totalAllocCount << std::endl;
+    }
   }
   can_frame *poolFrame = m_framePool.front();
   /* Copy structure */
@@ -391,7 +393,8 @@ void UDPThread::clearPool() {
   m_totalAllocCount = 0;
 }
 
-CANThread::CANThread(const std::string &canInterfaceName = "can0")
+CANThread::CANThread(const struct debugOptions_t &debugOptions,
+                     const std::string &canInterfaceName = "can0")
   : Thread()
   , m_canInterfaceName(canInterfaceName)
   , m_udpThread(NULL)
@@ -400,6 +403,7 @@ CANThread::CANThread(const std::string &canInterfaceName = "can0")
   , m_rxCount(0)
   , m_txCount(0)
 {
+  memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
 }
 
 int CANThread::start() {
@@ -499,17 +503,17 @@ void CANThread::run() {
       } else if (receivedBytes < sizeof(struct can_frame) || receivedBytes == 0) {
         lwarn << "Incomplete CAN frame" << std::endl;
       } else if (receivedBytes) {
-#if CAN_DEBUG
-        if (frame.can_id & CAN_EFF_FLAG)
-          std::cout << "EFF Frame ID[" << (frame.can_id & CAN_EFF_MASK)
-                                       << "]\t Length:" << (int) frame.can_dlc << "\t";
-        else
-          std::cout << "SFF Frame ID[" << (frame.can_id & CAN_SFF_MASK)
-                                       << "]\t Length:" << (int) frame.can_dlc << "\t";
-        for (uint8_t i=0; i<frame.can_dlc; i++)
-          std::cout << std::setbase(16) << " " << int(frame.data[i]);
-        std::cout << std::endl;
-#endif
+        if (m_debugOptions.can) {
+          if (frame.can_id & CAN_EFF_FLAG)
+            std::cout << "EFF Frame ID[" << std::dec << (frame.can_id & CAN_EFF_MASK)
+                                         << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
+          else
+            std::cout << "SFF Frame ID[" << std::dec << (frame.can_id & CAN_SFF_MASK)
+                                         << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
+          for (uint8_t i=0; i<frame.can_dlc; i++)
+            std::cout << std::setbase(16) << " " << int(frame.data[i]);
+          std::cout << std::endl;
+        }
         m_rxCount++;
         if (m_udpThread != NULL)
           m_udpThread->sendCANFrame(frame);

@@ -33,7 +33,7 @@
 #include "connection.h"
 #include "logging.h"
 
-#define CANNELLONI_VERSION 0.1
+#define CANNELLONI_VERSION 0.2
 
 using namespace cannelloni;
 
@@ -46,6 +46,11 @@ void printUsage() {
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (ms), default: 100" << std::endl;
+  std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
+  std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
+  std::cout << "\t\t\t u : enable debugging of udp frames" << std::endl;
+  std::cout << "\t\t\t b : enable debugging of interal buffer structures" << std::endl;
+  std::cout << "\t\t\t t : enable debugging of interal timers" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
   std::cout << "Mandatory options:" << std::endl;
   std::cout << "\t -R IP   \t\t remote IP" << std::endl;
@@ -61,7 +66,9 @@ int main(int argc, char** argv) {
   std::string canInterface = "vcan0";
   uint32_t bufferTimeout = 100;
 
-  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:h")) != -1) {
+  struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
+
+  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:d:h")) != -1) {
     switch(opt) {
       case 'l':
         localPort = strtoul(optarg, NULL, 10);
@@ -81,6 +88,16 @@ int main(int argc, char** argv) {
         break;
       case 't':
         bufferTimeout = strtoul(optarg, NULL, 10);
+        break;
+      case 'd':
+        if (strchr(optarg, 'c'))
+          debugOptions.can = 1;
+        if (strchr(optarg, 'u'))
+          debugOptions.udp = 1;
+        if (strchr(optarg, 'b'))
+          debugOptions.buffer = 1;
+        if (strchr(optarg, 't'))
+          debugOptions.buffer = 1;
         break;
       case 'h':
         printUsage();
@@ -131,8 +148,8 @@ int main(int argc, char** argv) {
   localAddr.sin_port = htons(localPort);
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
-  UDPThread *udpThread = new UDPThread(remoteAddr, localAddr);
-  CANThread *canThread = new CANThread(canInterface);
+  UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr);
+  CANThread *canThread = new CANThread(debugOptions, canInterface);
   udpThread->setCANThread(canThread);
   canThread->setUDPThread(udpThread);
   udpThread->setTimeout(bufferTimeout);
