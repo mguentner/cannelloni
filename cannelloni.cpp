@@ -1,7 +1,7 @@
 /*
  * This file is part of cannelloni, a SocketCAN over Ethernet tunnel.
  *
- * Copyright (C) 2014 Maximilian Güntner <maximilian.guentner@gmail.com>
+ * Copyright (C) 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 as
@@ -31,6 +31,7 @@
 #include <sys/signalfd.h>
 
 #include "connection.h"
+#include "framebuffer.h"
 #include "logging.h"
 
 #define CANNELLONI_VERSION 0.2
@@ -150,8 +151,12 @@ int main(int argc, char** argv) {
 
   UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr);
   CANThread *canThread = new CANThread(debugOptions, canInterface);
+  FrameBuffer *udpFrameBuffer = new FrameBuffer();
+  FrameBuffer *canFrameBuffer = new FrameBuffer();
   udpThread->setCANThread(canThread);
+  udpThread->setFrameBuffer(udpFrameBuffer);
   canThread->setUDPThread(udpThread);
+  canThread->setFrameBuffer(canFrameBuffer);
   udpThread->setTimeout(bufferTimeout);
   udpThread->start();
   canThread->start();
@@ -172,7 +177,9 @@ int main(int argc, char** argv) {
   canThread->stop();
 
   delete udpThread;
+  delete udpFrameBuffer;
   delete canThread;
+  delete canFrameBuffer;
   close(signalFD);
   return 0;
 }

@@ -6,7 +6,7 @@ ADD_DEFINITIONS(
 )
 
 add_executable(cannelloni cannelloni.cpp)
-add_library(addsources STATIC connection.cpp)
+add_library(addsources STATIC connection.cpp framebuffer.cpp)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(cannelloni addsources pthread)
 

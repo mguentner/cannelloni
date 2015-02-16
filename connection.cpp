@@ -1,7 +1,7 @@
 /*
  * This file is part of cannelloni, a SocketCAN over Ethernet tunnel.
  *
- * Copyright (C) 2014 Maximilian Güntner <maximilian.guentner@gmail.com>
+ * Copyright (C) 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 as
@@ -81,10 +81,7 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
                      const struct sockaddr_in &localAddr)
   : Thread()
   , m_canThread(NULL)
-  , m_frameBufferSize(0)
-  , m_frameBufferSize_trans(0)
-  , m_frameBuffer(new std::list<can_frame*>)
-  , m_frameBuffer_trans(new std::list<can_frame*>)
+  , m_frameBuffer(NULL)
   , m_sequenceNumber(0)
   , m_timeout(100)
   , m_rxCount(0)
@@ -96,8 +93,6 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
 }
 
 int UDPThread::start() {
-  /* Allocate entries for m_framePool */
-  resizePool(FRAME_POOL_SIZE);
   /* Setup our connection */
   m_udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
   if (m_udpSocket < 0) {
@@ -124,12 +119,10 @@ void UDPThread::stop() {
   close(m_udpSocket);
   Thread::stop();
   if (m_debugOptions.buffer) {
-    linfo << "m_framePool: " << m_framePool.size() << std::endl;
-    linfo << "m_frameBuffer: " << m_frameBuffer->size() << std::endl;
-    linfo << "m_frameBuffer_trans: " << m_frameBuffer_trans->size() << std::endl;
+    m_frameBuffer->debug();
   }
   /* free all entries in m_framePool */
-  clearPool();
+  m_frameBuffer->clearPool();
 }
 
 void UDPThread::run() {
@@ -175,7 +168,7 @@ void UDPThread::run() {
           gettimeofday(&currentTime, NULL);
           linfo << "Timer numExp:" << numExp << "@" << currentTime.tv_sec << " " << currentTime.tv_usec << std::endl;
         }
-        if (m_frameBufferSize)
+        if (m_frameBuffer->getFrameBufferSize())
           transmitBuffer();
       }
     }
@@ -197,8 +190,6 @@ void UDPThread::run() {
             } else {
               bool drop = false;
               struct UDPDataPacket *data;
-              /* We expect the packet to be sorted, so we can just use a vector */
-              std::vector<can_frame> canFrames;
               /* Check for OP Code */
               data = (struct UDPDataPacket*) buffer;
               if (data->version != CANNELLONI_FRAME_VERSION) {
@@ -228,33 +219,37 @@ void UDPThread::run() {
                     break;
                   }
                   /* We got at least a complete can_frame header */
-                  can_frame frame;
-                  frame.can_id = ntohl(*((uint32_t*)rawData));
+                  can_frame *frame = m_canThread->getFrameBuffer()->requestFrame();
+                  if (!frame) {
+                    lerror << "Allocation error." << std::endl;
+                    error = true;
+                    break;
+                  }
+                  frame->can_id = ntohl(*((uint32_t*)rawData));
                   rawData+=4;
-                  frame.can_dlc = *rawData;
+                  frame->can_dlc = *rawData;
                   rawData+=1;
                   /* Check again now that we know the dlc */
-                  if (rawData-buffer+frame.can_dlc > receivedBytes) {
+                  if (rawData-buffer+frame->can_dlc > receivedBytes) {
                     lerror << "Received incomplete packet / can header corrupt!" << std::endl;
                     error = true;
                     break;
                   }
-                  memcpy(frame.data, rawData, frame.can_dlc);
-                  canFrames.push_back(frame);
-                  rawData+=frame.can_dlc;
+                  memcpy(frame->data, rawData, frame->can_dlc);
+                  m_canThread->transmitCANFrame(frame);
+                  rawData+=frame->can_dlc;
                   if (m_debugOptions.can) {
-                    if (frame.can_id & CAN_EFF_FLAG)
-                      std::cout << "EFF Frame ID[" << std::dec << (frame.can_id & CAN_EFF_MASK)
-                                                   << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
+                    if (frame->can_id & CAN_EFF_FLAG)
+                      std::cout << "EFF Frame ID[" << std::dec << (frame->can_id & CAN_EFF_MASK)
+                                                   << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
                     else
-                      std::cout << "SFF Frame ID[" << std::dec << (frame.can_id & CAN_SFF_MASK)
-                                                   << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
-                    for (uint8_t i=0; i<frame.can_dlc; i++)
-                      std::cout << std::setbase(16) << " " << int(frame.data[i]);
+                      std::cout << "SFF Frame ID[" << std::dec << (frame->can_id & CAN_SFF_MASK)
+                                                   << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
+                    for (uint8_t i=0; i<frame->can_dlc; i++)
+                      std::cout << std::setbase(16) << " " << int(frame->data[i]);
                     std::cout << std::endl;
                   }
                 }
-                m_canThread->transmitCANFrames(canFrames);
               }
             }
         }
@@ -271,27 +266,19 @@ CANThread* UDPThread::getCANThread() {
   return m_canThread;
 }
 
-void UDPThread::sendCANFrame(const can_frame &frame) {
-  m_poolMutex.lock();
-  if (m_framePool.empty()) {
-    /* No frames available, allocating more */
-    resizePool(m_totalAllocCount);
-    if (m_debugOptions.buffer) {
-      linfo << "New Poolsize:" << m_totalAllocCount << std::endl;
-    }
-  }
-  can_frame *poolFrame = m_framePool.front();
-  /* Copy structure */
-  memcpy(poolFrame, &frame, sizeof(can_frame));
-  m_bufferMutex.lock();
-  /* Splice frame from m_framePool into m_frameBuffer */
-  m_frameBuffer->splice(m_frameBuffer->end(), m_framePool, m_framePool.begin());
-  m_poolMutex.unlock();
-  m_frameBufferSize += CANNELLONI_FRAME_BASE_SIZE + frame.can_dlc;
-  if (m_frameBufferSize + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
+void UDPThread::setFrameBuffer(FrameBuffer *buffer) {
+  m_frameBuffer = buffer;
+}
+
+FrameBuffer* UDPThread::getFrameBuffer() {
+  return m_frameBuffer;
+}
+
+void UDPThread::sendCANFrame(can_frame *frame) {
+  m_frameBuffer->insertFrame(frame);
+  if( m_frameBuffer->getFrameBufferSize() + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
     fireTimer();
   }
-  m_bufferMutex.unlock();
 }
 
 void UDPThread::setTimeout(uint32_t timeout) {
@@ -310,16 +297,13 @@ void UDPThread::transmitBuffer() {
   struct UDPDataPacket *dataPacket;
   struct timeval currentTime;
 
-  m_bufferMutex.lock();
-  std::swap(m_frameBufferSize, m_frameBufferSize_trans);
-  std::swap(m_frameBuffer, m_frameBuffer_trans);
-  m_bufferMutex.unlock();
+  m_frameBuffer->swapBuffers();
+  m_frameBuffer->sortIntermediateBuffer();
 
-  /* Sort m_frameBuffer_trans */
-  m_frameBuffer_trans->sort(can_frame_comp());
+  const std::list<can_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
 
   data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
-  for (auto it = m_frameBuffer_trans->begin(); it != m_frameBuffer_trans->end(); it++) {
+  for (auto it = buffer->begin(); it != buffer->end(); it++) {
     can_frame *frame = *it;
     /* Check for packet overflow */
     if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame->can_dlc) > UDP_PAYLOAD_SIZE) {
@@ -358,12 +342,8 @@ void UDPThread::transmitBuffer() {
   } else {
     m_txCount++;
   }
-
-  /* Add frame back to our pool */
-  m_poolMutex.lock();
-  m_framePool.merge(*m_frameBuffer_trans);
-  m_frameBufferSize_trans = 0;
-  m_poolMutex.unlock();
+  m_frameBuffer->unlockIntermediateBuffer();
+  m_frameBuffer->mergeIntermediateBuffer();
   delete[] packetBuffer;
 }
 
@@ -377,29 +357,11 @@ void UDPThread::fireTimer() {
   timerfd_settime(m_timerfd, 0, &ts, NULL);
 }
 
-void UDPThread::resizePool(uint32_t size) {
-  for (uint32_t i=0; i<size; i++) {
-    can_frame *frame = new can_frame;
-    m_framePool.push_back(frame);
-  }
-  m_totalAllocCount += size;
-}
-
-void UDPThread::clearPool() {
-  for (can_frame *f : m_framePool) {
-    delete f;
-  }
-  m_framePool.clear();
-  m_totalAllocCount = 0;
-}
-
 CANThread::CANThread(const struct debugOptions_t &debugOptions,
                      const std::string &canInterfaceName = "can0")
   : Thread()
   , m_canInterfaceName(canInterfaceName)
   , m_udpThread(NULL)
-  , m_frameBuffer(new std::vector<can_frame>)
-  , m_frameBuffer_trans(new std::vector<can_frame>)
   , m_rxCount(0)
   , m_txCount(0)
 {
@@ -453,7 +415,6 @@ void CANThread::stop() {
 void CANThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
-  struct can_frame frame;
   struct itimerspec ts;
 
   linfo << "CANThread up and running" << std::endl;
@@ -487,16 +448,24 @@ void CANThread::run() {
       }
       if (numExp) {
         /* We transmit our buffer */
-        transmitBuffer();
+        if (m_frameBuffer->getFrameBufferSize())
+          transmitBuffer();
       }
     }
     if (FD_ISSET(m_canSocket, &readfds)) {
-      receivedBytes = recv(m_canSocket, &frame, sizeof(struct can_frame), 0);
+      /* Request frame from frameBuffer */
+      struct can_frame *frame = m_udpThread->getFrameBuffer()->requestFrame();
+      if (frame == NULL) {
+        continue;
+      }
+      receivedBytes = recv(m_canSocket, frame, sizeof(struct can_frame), 0);
       if (receivedBytes < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
           /* Timeout occured */
+          m_udpThread->getFrameBuffer()->insertFramePool(frame);
           continue;
         } else {
+          m_udpThread->getFrameBuffer()->insertFramePool(frame);
           lerror << "CAN read error" << std::endl;
           return;
         }
@@ -504,19 +473,20 @@ void CANThread::run() {
         lwarn << "Incomplete CAN frame" << std::endl;
       } else if (receivedBytes) {
         if (m_debugOptions.can) {
-          if (frame.can_id & CAN_EFF_FLAG)
-            std::cout << "EFF Frame ID[" << std::dec << (frame.can_id & CAN_EFF_MASK)
-                                         << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
+          if (frame->can_id & CAN_EFF_FLAG)
+            std::cout << "EFF Frame ID[" << std::dec << (frame->can_id & CAN_EFF_MASK)
+                                         << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
           else
-            std::cout << "SFF Frame ID[" << std::dec << (frame.can_id & CAN_SFF_MASK)
-                                         << "]\t Length:" << std::dec << (int) frame.can_dlc << "\t";
-          for (uint8_t i=0; i<frame.can_dlc; i++)
-            std::cout << std::setbase(16) << " " << int(frame.data[i]);
+            std::cout << "SFF Frame ID[" << std::dec << (frame->can_id & CAN_SFF_MASK)
+                                         << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
+          for (uint8_t i=0; i<frame->can_dlc; i++)
+            std::cout << std::setbase(16) << " " << int(frame->data[i]);
           std::cout << std::endl;
         }
         m_rxCount++;
-        if (m_udpThread != NULL)
+        if (m_udpThread != NULL) {
           m_udpThread->sendCANFrame(frame);
+        }
       }
     }
   }
@@ -530,28 +500,36 @@ UDPThread* CANThread::getUDPThread() {
   return m_udpThread;
 }
 
-void CANThread::transmitCANFrames(const std::vector<can_frame> &frames) {
-  m_bufferMutex.lock();
-  m_frameBuffer->insert(m_frameBuffer->end(), frames.begin(), frames.end());
-  m_bufferMutex.unlock();
+void CANThread::setFrameBuffer(FrameBuffer *buffer) {
+  m_frameBuffer = buffer;
+}
+
+FrameBuffer* CANThread::getFrameBuffer() {
+  return m_frameBuffer;
+}
+
+void CANThread::transmitCANFrame(can_frame* frame) {
+  m_frameBuffer->insertFrame(frame);
   fireTimer();
 }
 
 void CANThread::transmitBuffer() {
   ssize_t transmittedBytes = 0;
   /* Swap buffers */
-  m_bufferMutex.lock();
-  std::swap(m_frameBuffer, m_frameBuffer_trans);
-  m_bufferMutex.unlock();
-  for (can_frame frame : *m_frameBuffer_trans) {
-    transmittedBytes = write(m_canSocket, &frame, sizeof(frame));
-    if (transmittedBytes != sizeof(frame)) {
+  m_frameBuffer->swapBuffers();
+  /* TODO: Should a sort happen here again? */
+  const std::list<can_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
+  for (auto it = buffer->begin(); it != buffer->end(); it++) {
+    can_frame *frame = *it;
+    transmittedBytes = write(m_canSocket, frame, sizeof(*frame));
+    if (transmittedBytes != sizeof(*frame)) {
       lerror << "CAN write failed" << std::endl;
     } else {
       m_txCount++;
     }
   }
-  m_frameBuffer_trans->clear();
+  m_frameBuffer->unlockIntermediateBuffer();
+  m_frameBuffer->mergeIntermediateBuffer();
 }
 
 void CANThread::fireTimer() {

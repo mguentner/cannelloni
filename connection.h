@@ -1,7 +1,7 @@
 /*
  * This file is part of cannelloni, a SocketCAN over ethernet tunnel.
  *
- * Copyright (C) 2014 Maximilian Güntner <maximilian.guentner@gmail.com>
+ * Copyright (C) 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 as
@@ -30,13 +30,13 @@
 #include <netinet/in.h>
 
 #include "can.h"
+#include "framebuffer.h"
 
 namespace cannelloni {
 
 #define RECEIVE_BUFFER_SIZE 1500
 #define UDP_PAYLOAD_SIZE 1472
 #define CAN_TIMEOUT 2000 /* ms */
-#define FRAME_POOL_SIZE 1000
 
 struct debugOptions_t {
   uint8_t can    : 1;
@@ -82,7 +82,10 @@ class UDPThread : public Thread {
     void setCANThread(CANThread *thread);
     CANThread* getCANThread();
 
-    void sendCANFrame(const can_frame &frame);
+    void setFrameBuffer(FrameBuffer *buffer);
+    FrameBuffer *getFrameBuffer();
+
+    void sendCANFrame(can_frame *frame);
     void setTimeout(uint32_t timeout);
     uint32_t getTimeout();
 
@@ -90,8 +93,6 @@ class UDPThread : public Thread {
     /* This function transmits m_frameBuffer */
     void transmitBuffer();
     void fireTimer();
-    void resizePool(uint32_t size);
-    void clearPool();
 
   private:
     struct debugOptions_t m_debugOptions;
@@ -103,25 +104,10 @@ class UDPThread : public Thread {
     int m_timerfd;
 
     CANThread *m_canThread;
+    FrameBuffer *m_frameBuffer;
     struct sockaddr_in m_localAddr;
     struct sockaddr_in m_remoteAddr;
-    /*
-     * This is the local buffer of frames for this
-     * Thread. Once a timeout occurs or a packet is
-     * full, this buffer gets sent to remoteAddr
-     */
-    std::list<can_frame*> m_framePool;
-    std::list<can_frame*> *m_frameBuffer;
-    std::list<can_frame*> *m_frameBuffer_trans;
 
-    uint64_t m_totalAllocCount;
-    /* When filling/swapping the buffers we currently need a mutex */
-    std::mutex m_bufferMutex;
-    std::mutex m_poolMutex;
-
-    /* Track current frame buffer size */
-    uint64_t m_frameBufferSize;
-    uint64_t m_frameBufferSize_trans;
     uint8_t m_sequenceNumber;
     /* Timeout variables */
     uint32_t m_timeout;
@@ -142,7 +128,10 @@ class CANThread : public Thread {
     void setUDPThread(UDPThread *thread);
     UDPThread* getUDPThread();
 
-    void transmitCANFrames(const std::vector<can_frame> &frames);
+    void setFrameBuffer(FrameBuffer *buffer);
+    FrameBuffer *getFrameBuffer();
+
+    void transmitCANFrame(can_frame *frame);
   private:
     void transmitBuffer();
     void fireTimer();
@@ -155,15 +144,11 @@ class CANThread : public Thread {
      */
     int m_timerfd;
 
-    /* When filling/swapping the buffers we currently need a mutex */
-    std::mutex m_bufferMutex;
-
     struct sockaddr_can m_localAddr;
     std::string m_canInterfaceName;
     UDPThread *m_udpThread;
-    /* FIFO Buffer of frames */
-    std::vector<can_frame> *m_frameBuffer;
-    std::vector<can_frame> *m_frameBuffer_trans;
+    FrameBuffer *m_frameBuffer;
+
     /* Performance Counters */
     uint64_t m_rxCount;
     uint64_t m_txCount;
