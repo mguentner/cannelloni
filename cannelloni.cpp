@@ -34,7 +34,7 @@
 #include "framebuffer.h"
 #include "logging.h"
 
-#define CANNELLONI_VERSION 0.2
+#define CANNELLONI_VERSION 0.3
 
 using namespace cannelloni;
 
