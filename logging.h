@@ -1,7 +1,7 @@
 /*
  * This file is part of cannelloni, a SocketCAN over ethernet tunnel.
  *
- * Copyright (C) 2014 Maximilian Güntner <maximilian.guentner@gmail.com>
+ * Copyright (C) 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 as
@@ -20,8 +20,14 @@
 
 #pragma once
 #include <iostream>
+#include <string>
 
-#define FUNCTION_STRING __FILE__ << "[" << std::dec <<  __LINE__ << "]:" << __FUNCTION__ << ":"
+inline std::string splitFilename(const std::string &path) {
+  uint16_t pos = path.find_last_of("/\\");
+  return path.substr(pos+1);
+}
+
+#define FUNCTION_STRING splitFilename(__FILE__) << "[" << std::dec <<  __LINE__ << "]:" << __FUNCTION__ << ":"
 #define INFO_STRING "INFO:"
 #define ERROR_STRING "ERROR:"
 #define WARNING_STRING "WARNING:"
