@@ -23,6 +23,7 @@
 #include <vector>
 #include <list>
 #include <mutex>
+#include <map>
 
 #include <stdint.h>
 
@@ -89,10 +90,16 @@ class UDPThread : public Thread {
     void setTimeout(uint32_t timeout);
     uint32_t getTimeout();
 
+    void setTimeoutTable(std::map<uint32_t,uint32_t> &timeoutTable);
+    std::map<uint32_t,uint32_t>& getTimeoutTable();
+
   private:
     /* This function transmits m_frameBuffer */
     void transmitBuffer();
     void fireTimer();
+    /* Returns the current timer value in us */
+    uint32_t getTimerValue();
+    void adjustTimer(uint32_t interval, uint32_t value);
 
   private:
     struct debugOptions_t m_debugOptions;
@@ -111,6 +118,7 @@ class UDPThread : public Thread {
     uint8_t m_sequenceNumber;
     /* Timeout variables */
     uint32_t m_timeout;
+    std::map<uint32_t,uint32_t> m_timeoutTable;
     /* Performance Counters */
     uint64_t m_rxCount;
     uint64_t m_txCount;

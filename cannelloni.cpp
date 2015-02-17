@@ -24,6 +24,8 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include <iomanip>
+
 #include <net/if.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -33,6 +35,7 @@
 #include "connection.h"
 #include "framebuffer.h"
 #include "logging.h"
+#include "csvmapparser.h"
 
 #define CANNELLONI_VERSION 0.3
 
@@ -46,7 +49,8 @@ void printUsage() {
   std::cout << "\t -L IP   \t\t listening IP, default: 0.0.0.0" << std::endl;
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
-  std::cout << "\t -t timeout \t\t buffer timeout for can messages (ms), default: 100" << std::endl;
+  std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
+  std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
   std::cout << "\t\t\t u : enable debugging of udp frames" << std::endl;
@@ -65,11 +69,14 @@ int main(int argc, char** argv) {
   char localIP[INET_ADDRSTRLEN] = "0.0.0.0";
   uint16_t localPort = 20000;
   std::string canInterface = "vcan0";
-  uint32_t bufferTimeout = 100;
+  uint32_t bufferTimeout = 100000;
+  std::string timeoutTableFile;
+  /* Key is CAN ID, Value is timeout in us */
+  std::map<uint32_t, uint32_t> timeoutTable;
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:d:h")) != -1) {
+  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:T:d:h")) != -1) {
     switch(opt) {
       case 'l':
         localPort = strtoul(optarg, NULL, 10);
@@ -90,6 +97,9 @@ int main(int argc, char** argv) {
       case 't':
         bufferTimeout = strtoul(optarg, NULL, 10);
         break;
+      case 'T':
+        timeoutTableFile = std::string(optarg);
+        break;
       case 'd':
         if (strchr(optarg, 'c'))
           debugOptions.can = 1;
@@ -98,7 +108,7 @@ int main(int argc, char** argv) {
         if (strchr(optarg, 'b'))
           debugOptions.buffer = 1;
         if (strchr(optarg, 't'))
-          debugOptions.buffer = 1;
+          debugOptions.timer = 1;
         break;
       case 'h':
         printUsage();
@@ -112,6 +122,39 @@ int main(int argc, char** argv) {
     std::cout << "Error: Remote IP not supplied" << std::endl;
     printUsage();
     return -1;
+  }
+
+  if (!timeoutTableFile.empty()) {
+    CSVMapParser<uint32_t,uint32_t> mapParser;
+    if(!mapParser.open(timeoutTableFile)) {
+      lerror << "Unable to open " << timeoutTableFile << "." << std::endl;
+      return -1;
+    }
+    if(!mapParser.parse()) {
+      lerror << "Error while parsing " << timeoutTableFile << "." << std::endl;
+      return -1;
+    }
+    if(!mapParser.close()) {
+      lerror << "Error while closing" << timeoutTableFile << "." << std::endl;
+      return -1;
+    }
+    timeoutTable = mapParser.read();
+  }
+
+  if (debugOptions.timer) {
+    if (timeoutTable.empty()) {
+      linfo << "No custom timeout table specified, using " << bufferTimeout << " us for all frames." << std::endl;
+    } else {
+      linfo << "Custom timeout table loaded: " << std::endl;
+      linfo << "*---------------------*" << std::endl;
+      linfo << "|  ID  | Timeout (us) |" << std::endl;
+      std::map<uint32_t,uint32_t>::iterator it;
+      for (it=timeoutTable.begin(); it!=timeoutTable.end(); ++it)
+        linfo << "|" << std::setw(6) << it->first << "|" << std::setw(14) << it->second << "| " << std::endl;
+      linfo << "-------------------" << std::endl;
+      linfo << "*---------------------*" << std::endl;
+      linfo << "Other Frames:" << bufferTimeout << " us." << std::endl;
+    }
   }
 
   struct sockaddr_in remoteAddr;
@@ -155,6 +198,7 @@ int main(int argc, char** argv) {
   FrameBuffer *canFrameBuffer = new FrameBuffer();
   udpThread->setCANThread(canThread);
   udpThread->setFrameBuffer(udpFrameBuffer);
+  udpThread->setTimeoutTable(timeoutTable);
   canThread->setUDPThread(udpThread);
   canThread->setFrameBuffer(canFrameBuffer);
   udpThread->setTimeout(bufferTimeout);

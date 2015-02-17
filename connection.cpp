@@ -133,17 +133,11 @@ void UDPThread::run() {
   socklen_t clientAddrLen = sizeof(struct sockaddr_in);
   char clientAddrStr[INET_ADDRSTRLEN];
 
-  struct itimerspec ts;
+  /* Set interval to m_timeout and an immediate timeout */
+  adjustTimer(m_timeout, 1);
 
   linfo << "UDPThread up and running" << std::endl;
-  /* Prepare timerfd for the first time*/
-  ts.it_interval.tv_sec = m_timeout/1000;
-  ts.it_interval.tv_nsec = (m_timeout%1000)*1000000;
-  ts.it_value.tv_sec = m_timeout/1000;
-  ts.it_value.tv_nsec = (m_timeout%1000)*1000000;
-  timerfd_settime(m_timerfd, 0, &ts, NULL);
-
-  while (m_started) {
+    while (m_started) {
     /* Prepare readfds */
     FD_ZERO(&readfds);
     FD_SET(m_udpSocket, &readfds);
@@ -163,11 +157,6 @@ void UDPThread::run() {
         break;
       }
       if (numExp) {
-        if (m_debugOptions.timer) {
-          struct timeval currentTime;
-          gettimeofday(&currentTime, NULL);
-          linfo << "Timer numExp:" << numExp << "@" << currentTime.tv_sec << " " << currentTime.tv_usec << std::endl;
-        }
         if (m_frameBuffer->getFrameBufferSize())
           transmitBuffer();
       }
@@ -278,6 +267,29 @@ void UDPThread::sendCANFrame(can_frame *frame) {
   m_frameBuffer->insertFrame(frame);
   if( m_frameBuffer->getFrameBufferSize() + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
     fireTimer();
+  } else {
+    /* Check whether we have custom timeout for this frame */
+    std::map<uint32_t,uint32_t>::iterator it;
+    uint32_t can_id;
+    if (frame->can_id & CAN_EFF_FLAG)
+      can_id = frame->can_id & CAN_EFF_FLAG;
+    else
+      can_id = frame->can_id & CAN_SFF_MASK;
+    it = m_timeoutTable.find(can_id);
+    if (it != m_timeoutTable.end()) {
+      uint32_t timeout = it->second;
+      if (timeout < m_timeout) {
+        if (timeout < getTimerValue()) {
+          if (m_debugOptions.timer) {
+            linfo << "Found timeout entry for ID " << can_id << ". Adjusting timer." << std::endl;
+          }
+          /* Let buffer expire in timeout ms */
+          adjustTimer(m_timeout, timeout);
+        }
+      }
+
+    }
+
   }
 }
 
@@ -287,6 +299,14 @@ void UDPThread::setTimeout(uint32_t timeout) {
 
 uint32_t UDPThread::getTimeout() {
   return m_timeout;
+}
+
+void UDPThread::setTimeoutTable(std::map<uint32_t,uint32_t> &timeoutTable) {
+  m_timeoutTable = timeoutTable;
+}
+
+std::map<uint32_t,uint32_t>& UDPThread::getTimeoutTable() {
+  return m_timeoutTable;
 }
 
 void UDPThread::transmitBuffer() {
@@ -347,14 +367,27 @@ void UDPThread::transmitBuffer() {
   delete[] packetBuffer;
 }
 
-void UDPThread::fireTimer() {
+inline uint32_t UDPThread::getTimerValue() {
   struct itimerspec ts;
-  /* Reset the timer of m_timerfd to m_timeout */
-  ts.it_interval.tv_sec = m_timeout/1000;
-  ts.it_interval.tv_nsec = (m_timeout%1000)*1000000;
-  ts.it_value.tv_sec = 0;
-  ts.it_value.tv_nsec = 1000;
+  timerfd_gettime(m_timerfd, &ts);
+  return ts.it_value.tv_sec*1000000 + ts.it_value.tv_nsec/1000;
+}
+
+inline void UDPThread::adjustTimer(uint32_t interval, uint32_t value) {
+  struct itimerspec ts;
+  ts.it_interval.tv_sec = interval/1000000;
+  ts.it_interval.tv_nsec = (interval%1000000)*1000;
+  ts.it_value.tv_sec = value/1000000;
+  ts.it_value.tv_nsec = (value%1000000)*1000;
   timerfd_settime(m_timerfd, 0, &ts, NULL);
+  if (m_debugOptions.timer) {
+    linfo << "Timer has been adjusted. Interval:" << interval << " Value:" << value << std::endl;
+  }
+}
+
+void UDPThread::fireTimer() {
+  /* Instant expiry (so 1us) */
+  adjustTimer(m_timeout, 1);
 }
 
 CANThread::CANThread(const struct debugOptions_t &debugOptions,
