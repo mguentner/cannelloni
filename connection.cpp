@@ -214,19 +214,22 @@ void UDPThread::run() {
                     error = true;
                     break;
                   }
-                  frame->can_id = ntohl(*((uint32_t*)rawData));
+                  frame->can_id = ntohl(*((canid_t*)rawData));
                   rawData+=4;
                   frame->can_dlc = *rawData;
                   rawData+=1;
-                  /* Check again now that we know the dlc */
-                  if (rawData-buffer+frame->can_dlc > receivedBytes) {
-                    lerror << "Received incomplete packet / can header corrupt!" << std::endl;
-                    error = true;
-                    break;
+                  /* RTR Frames have no data section although they have a dlc */
+                  if ((frame->can_id & CAN_RTR_FLAG) == 0) {
+                    /* Check again now that we know the dlc */
+                    if (rawData-buffer+frame->can_dlc > receivedBytes) {
+                      lerror << "Received incomplete packet / can header corrupt!" << std::endl;
+                      error = true;
+                      break;
+                    }
+                    memcpy(frame->data, rawData, frame->can_dlc);
+                    rawData+=frame->can_dlc;
                   }
-                  memcpy(frame->data, rawData, frame->can_dlc);
                   m_canThread->transmitCANFrame(frame);
-                  rawData+=frame->can_dlc;
                   if (m_debugOptions.can) {
                     printCANInfo(frame);
                   }
@@ -264,7 +267,7 @@ void UDPThread::sendCANFrame(can_frame *frame) {
     std::map<uint32_t,uint32_t>::iterator it;
     uint32_t can_id;
     if (frame->can_id & CAN_EFF_FLAG)
-      can_id = frame->can_id & CAN_EFF_FLAG;
+      can_id = frame->can_id & CAN_EFF_MASK;
     else
       can_id = frame->can_id & CAN_SFF_MASK;
     it = m_timeoutTable.find(can_id);
@@ -338,8 +341,10 @@ void UDPThread::transmitBuffer() {
     data+=4;
     *data = frame->can_dlc;
     data+=1;
-    memcpy(data, frame->data, frame->can_dlc);
-    data+=frame->can_dlc;
+    if ((frame->can_id & CAN_RTR_FLAG) == 0) {
+      memcpy(data, frame->data, frame->can_dlc);
+      data+=frame->can_dlc;
+    }
     frameCount++;
   }
   dataPacket = (struct UDPDataPacket*) packetBuffer;
