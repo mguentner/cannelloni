@@ -125,7 +125,7 @@ INFO:cannelloni.cpp[155]:main:Other Frames:100000 us.
 ```
 
 #Contributing
-Please fork the repository, create a *seperate* branch and create a PR
+Please fork the repository, create a *separate* branch and create a PR
 for your work.
 
 #License
