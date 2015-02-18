@@ -151,7 +151,6 @@ int main(int argc, char** argv) {
       std::map<uint32_t,uint32_t>::iterator it;
       for (it=timeoutTable.begin(); it!=timeoutTable.end(); ++it)
         linfo << "|" << std::setw(6) << it->first << "|" << std::setw(14) << it->second << "| " << std::endl;
-      linfo << "-------------------" << std::endl;
       linfo << "*---------------------*" << std::endl;
       linfo << "Other Frames:" << bufferTimeout << " us." << std::endl;
     }
