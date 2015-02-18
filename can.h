@@ -32,7 +32,7 @@ namespace cannelloni {
 
 enum op_codes {DATA, ACK, NACK};
 
-struct UDPDataPacket {
+struct __attribute__((__packed__)) UDPDataPacket {
   /* Version */
   uint8_t version;
   /* OP Code */
@@ -44,7 +44,7 @@ struct UDPDataPacket {
 };
 
 /* This packet serves for both ACK and NACK */
-struct UDPACKPacket {
+struct __attribute__((__packed__)) UDPACKPacket {
   /* Version */
   uint8_t version;
   /* OP Code */
