@@ -37,7 +37,7 @@
 #include "logging.h"
 #include "csvmapparser.h"
 
-#define CANNELLONI_VERSION 0.3
+#define CANNELLONI_VERSION 0.4
 
 using namespace cannelloni;
 
