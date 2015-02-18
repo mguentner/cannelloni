@@ -228,15 +228,7 @@ void UDPThread::run() {
                   m_canThread->transmitCANFrame(frame);
                   rawData+=frame->can_dlc;
                   if (m_debugOptions.can) {
-                    if (frame->can_id & CAN_EFF_FLAG)
-                      std::cout << "EFF Frame ID[" << std::dec << (frame->can_id & CAN_EFF_MASK)
-                                                   << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
-                    else
-                      std::cout << "SFF Frame ID[" << std::dec << (frame->can_id & CAN_SFF_MASK)
-                                                   << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
-                    for (uint8_t i=0; i<frame->can_dlc; i++)
-                      std::cout << std::setbase(16) << " " << int(frame->data[i]);
-                    std::cout << std::endl;
+                    printCANInfo(frame);
                   }
                 }
               }
@@ -505,20 +497,12 @@ void CANThread::run() {
       } else if (receivedBytes < sizeof(struct can_frame) || receivedBytes == 0) {
         lwarn << "Incomplete CAN frame" << std::endl;
       } else if (receivedBytes) {
-        if (m_debugOptions.can) {
-          if (frame->can_id & CAN_EFF_FLAG)
-            std::cout << "EFF Frame ID[" << std::dec << (frame->can_id & CAN_EFF_MASK)
-                                         << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
-          else
-            std::cout << "SFF Frame ID[" << std::dec << (frame->can_id & CAN_SFF_MASK)
-                                         << "]\t Length:" << std::dec << (int) frame->can_dlc << "\t";
-          for (uint8_t i=0; i<frame->can_dlc; i++)
-            std::cout << std::setbase(16) << " " << int(frame->data[i]);
-          std::cout << std::endl;
-        }
         m_rxCount++;
         if (m_udpThread != NULL) {
           m_udpThread->sendCANFrame(frame);
+        }
+        if (m_debugOptions.can) {
+          printCANInfo(frame);
         }
       }
     }

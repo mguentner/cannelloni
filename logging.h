@@ -20,7 +20,10 @@
 
 #pragma once
 #include <iostream>
+#include <iomanip>
 #include <string>
+
+#include <linux/can.h>
 
 inline std::string splitFilename(const std::string &path) {
   uint16_t pos = path.find_last_of("/\\");
@@ -35,3 +38,24 @@ inline std::string splitFilename(const std::string &path) {
 #define linfo std::cout << INFO_STRING << FUNCTION_STRING
 #define lwarn std::cerr << WARNING_STRING << FUNCTION_STRING
 #define lerror std::cerr << ERROR_STRING << FUNCTION_STRING
+
+inline void printCANInfo(const can_frame *frame) {
+  if (frame->can_id & CAN_EFF_FLAG) {
+    std::cout << "EFF Frame ID[" << std::setw(5) << std::dec << (frame->can_id & CAN_EFF_MASK) << "]";
+  } else {
+    std::cout << "SFF Frame ID[" << std::setw(5) << std::dec << (frame->can_id & CAN_SFF_MASK) << "]";
+  }
+  if (frame->can_id & CAN_ERR_FLAG == 0)
+    std::cout << "\t ERROR\t";
+  else
+    std::cout << "\t Length:" << std::dec << (int) frame->can_dlc << "\t";
+
+  if (frame->can_id & CAN_RTR_FLAG)  {
+      std::cout << "\tREMOTE";
+  } else {
+    /* This will also contain the error information */
+    for (uint8_t i=0; i<frame->can_dlc; i++)
+      std::cout << std::setbase(16) << " " << int(frame->data[i]);
+  }
+  std::cout << std::endl;
+};
