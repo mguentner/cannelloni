@@ -217,7 +217,9 @@ int main(int argc, char** argv) {
   }
 
   udpThread->stop();
+  udpThread->join();
   canThread->stop();
+  canThread->join();
 
   delete udpThread;
   delete udpFrameBuffer;

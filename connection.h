@@ -51,7 +51,10 @@ class Thread {
     Thread();
     ~Thread();
     virtual int start();
+    /* this is function tell the thread to stop */
     virtual void stop();
+    /* joins the thread */
+    void join();
     /* */
     bool isRunning();
     /* */

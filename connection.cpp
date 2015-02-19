@@ -60,6 +60,9 @@ int Thread::start() {
 
 void Thread::stop() {
   m_started = false;
+}
+
+void Thread::join() {
   if (m_privThread)
     m_privThread->join();
   delete m_privThread;
@@ -113,16 +116,9 @@ int UDPThread::start() {
 }
 
 void UDPThread::stop() {
-  linfo << "Shutting down. UDP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
-  /* Close socket to interrupt recvfrom in run() */
-  shutdown(m_udpSocket, SHUT_RDWR);
-  close(m_udpSocket);
   Thread::stop();
-  if (m_debugOptions.buffer) {
-    m_frameBuffer->debug();
-  }
-  /* free all entries in m_framePool */
-  m_frameBuffer->clearPool();
+  /* m_started is now false, we need to wake up the thread */
+  fireTimer();
 }
 
 void UDPThread::run() {
@@ -137,7 +133,7 @@ void UDPThread::run() {
   adjustTimer(m_timeout, 1);
 
   linfo << "UDPThread up and running" << std::endl;
-    while (m_started) {
+  while (m_started) {
     /* Prepare readfds */
     FD_ZERO(&readfds);
     FD_SET(m_udpSocket, &readfds);
@@ -240,6 +236,14 @@ void UDPThread::run() {
       }
     }
   }
+  if (m_debugOptions.buffer) {
+    m_frameBuffer->debug();
+  }
+  /* free all entries in m_framePool */
+  m_frameBuffer->clearPool();
+  linfo << "Shutting down. UDP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
+  shutdown(m_udpSocket, SHUT_RDWR);
+  close(m_udpSocket);
 }
 
 void UDPThread::setCANThread(CANThread *thread) {
@@ -430,16 +434,8 @@ int CANThread::start() {
 }
 
 void CANThread::stop() {
-  linfo << "Shutting down. CAN Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
-  /*
-   * shutdown socket to interrupt recvfrom in run()
-   * NOTE: This does currently not work, there we use a timeout on
-   * the socket to interrupt the loop
-   */
-  shutdown(m_canSocket, SHUT_RDWR);
-  fireTimer();
-  close(m_canSocket);
   Thread::stop();
+  fireTimer();
 }
 
 void CANThread::run() {
@@ -512,6 +508,14 @@ void CANThread::run() {
       }
     }
   }
+  if (m_debugOptions.buffer) {
+    m_frameBuffer->debug();
+  }
+  /* free all entries in m_framePool */
+  m_frameBuffer->clearPool();
+  linfo << "Shutting down. CAN Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
+  shutdown(m_canSocket, SHUT_RDWR);
+  close(m_canSocket);
 }
 
 void CANThread::setUDPThread(UDPThread *thread) {
