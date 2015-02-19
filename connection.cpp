@@ -376,6 +376,9 @@ inline uint32_t UDPThread::getTimerValue() {
 
 inline void UDPThread::adjustTimer(uint32_t interval, uint32_t value) {
   struct itimerspec ts;
+  /* Setting the value to 0 disables the timer */
+  if (value == 0)
+    value = 1;
   ts.it_interval.tv_sec = interval/1000000;
   ts.it_interval.tv_nsec = (interval%1000000)*1000;
   ts.it_value.tv_sec = value/1000000;
