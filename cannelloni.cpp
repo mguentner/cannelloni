@@ -123,6 +123,11 @@ int main(int argc, char** argv) {
     printUsage();
     return -1;
   }
+  if (bufferTimeout == 0) {
+    std::cout << "Error: Only non-zero timeouts are allowed" << std::endl;
+    printUsage();
+    return -1;
+  }
 
   if (!timeoutTableFile.empty()) {
     CSVMapParser<uint32_t,uint32_t> mapParser;
