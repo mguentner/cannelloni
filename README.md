@@ -41,7 +41,7 @@ Just install it using
 
 ###Example
 
-Two machines A and B need to be connected:
+Two machines 1 and 2 need to be connected:
 
 ![](doc/firstexp.png)
 
@@ -63,6 +63,22 @@ sudo modprobe vcan
 sudo ip link add name vcan0 type vcan
 sudo ip link set dev vcan0 up
 ```
+
+When operating with `vcan` interfaces always keep in mind that they
+easily surpass the possible data rate of any physical CAN interface.
+An application that just sends whenever the bus is ready would simply
+send with many Mbit/s.
+The receiving end, a physical CAN interface with a net. data rate of
+<= 1 Mbit/s would not be able to keep up.
+It is therefore a good idea to rate limit a `vcan` interface to
+prevent packet loss.
+
+```
+sudo tc qdisc add dev vcan0 root tbf rate 300kbit latency 100ms burst 1000
+```
+This command will rate limit `vcan0` to 300 kbit/s.
+Try to match the rate limit with your physical interface on the remote.
+Keep also in mind that this can also increases the overall latency!
 
 Now start cannelloni on Machine 2:
 ```
