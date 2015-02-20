@@ -31,6 +31,7 @@ namespace cannelloni {
  * This buffer contains can_frames received by CANThread or
  * UDPThread and stores them in a queue until an event occurs that leads to
  * flushing the buffer (e.g. timeout in UDPThread).
+ *
  * When this happens, the buffers will be swapped to minimize the
  * time a Thread can be locked by a mutex.
  * All sorting should take place on the intermediate buffer to make
@@ -38,6 +39,10 @@ namespace cannelloni {
  *
  * Only the intermediate buffer is exposed and should only be accessed
  * by one party at a time.
+ *
+ * If the producer is a lot faster than the receiver, in our case
+ * UDPThread >> CANThread, frames can also be extracted one at a time
+ * if the interface blocks and writing is deferred.
  *
  * Currently there are a lot of mutex locks involved which need to be checked
  * again at a later time.
@@ -61,8 +66,19 @@ class FrameBuffer {
     /* If a read fails we need to give the frame back */
     void insertFramePool(can_frame *frame);
 
-    /* Inserts a frame into the frameBuffer */
+    /* Inserts a frame into the frameBuffer (back) */
     void insertFrame(can_frame *frame);
+
+    /* Inserts a frame into the frameBuffer (front) */
+    void returnFrame(can_frame *frame);
+
+    /* Instead of operating on the intermediateBuffer, we can
+     * also request a frame from the buffer and put it back
+     * using insertFramePool or returnFrame
+     * This is useful when the consumer is a lot slower than
+     * the producer (see Design Notes)
+     */
+    can_frame* requestBufferFront();
 
     /* Swaps m_Buffer with m_intermediateBuffer */
     void swapBuffers();
@@ -72,6 +88,7 @@ class FrameBuffer {
 
     /* merges m_intermediateBuffer back into m_poolMutex */
     void mergeIntermediateBuffer();
+
 
     /* This will return a pointer to the current intermediateBuffer.
      * Once the operation is done the caller MUST call

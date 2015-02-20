@@ -78,6 +78,26 @@ void FrameBuffer::insertFrame(can_frame *frame) {
   m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->can_dlc;
 }
 
+void FrameBuffer::returnFrame(can_frame *frame) {
+  std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
+
+  m_buffer->push_front(frame);
+  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->can_dlc;
+}
+
+can_frame* FrameBuffer::requestBufferFront() {
+  std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
+  if (m_buffer->empty()) {
+    return NULL;
+  }
+  else {
+    can_frame *ret = m_buffer->front();
+    m_buffer->pop_front();
+    m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + ret->can_dlc);
+    return ret;
+  }
+}
+
 void FrameBuffer::swapBuffers() {
   std::unique_lock<std::recursive_mutex> lock1(m_bufferMutex, std::defer_lock);
   std::unique_lock<std::recursive_mutex> lock2(m_intermediateBufferMutex, std::defer_lock);
@@ -115,7 +135,8 @@ void FrameBuffer::unlockIntermediateBuffer() {
 
 void FrameBuffer::debug() {
   linfo << "FramePool: " << m_framePool.size() << std::endl;
-  linfo << "Buffer: " << m_buffer->size() << std::endl;
+  linfo << "Buffer: " << m_buffer->size() << " (elements) "
+        << m_bufferSize << " (bytes)" <<  std::endl;
   linfo << "intermediateBuffer: " << m_intermediateBuffer->size() << std::endl;
 }
 

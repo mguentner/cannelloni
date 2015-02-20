@@ -448,12 +448,7 @@ void CANThread::run() {
 
   linfo << "CANThread up and running" << std::endl;
 
-  /* Prepare timerfd for the first time*/
-  ts.it_interval.tv_sec = CAN_TIMEOUT/1000;
-  ts.it_interval.tv_nsec = (CAN_TIMEOUT%1000)*1000000;
-  ts.it_value.tv_sec = CAN_TIMEOUT/1000;
-  ts.it_value.tv_nsec = (CAN_TIMEOUT%1000)*1000000;
-  timerfd_settime(m_timerfd, 0, &ts, NULL);
+  adjustTimer(CAN_TIMEOUT, CAN_TIMEOUT);
 
   while (m_started) {
     /* Prepare readfds */
@@ -544,29 +539,51 @@ void CANThread::transmitCANFrame(can_frame* frame) {
 
 void CANThread::transmitBuffer() {
   ssize_t transmittedBytes = 0;
-  /* Swap buffers */
-  m_frameBuffer->swapBuffers();
-  /* TODO: Should a sort happen here again? */
-  const std::list<can_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
-  for (auto it = buffer->begin(); it != buffer->end(); it++) {
-    can_frame *frame = *it;
+  can_frame *frame;
+  /* Loop here until buffer is empty or we cannot write anymore */
+  while(1) {
+    frame = m_frameBuffer->requestBufferFront();
+    if (frame == NULL)
+      break;
     transmittedBytes = write(m_canSocket, frame, sizeof(*frame));
     if (transmittedBytes != sizeof(*frame)) {
-      lerror << "CAN write failed" << std::endl;
+      /* Put frame back into buffer */
+      m_frameBuffer->returnFrame(frame);
+      /* Revisit this function after 25 us */
+      adjustTimer(CAN_TIMEOUT, 25);
+      if (m_debugOptions.can)
+        linfo << "CAN write failed." << std::endl;
+      break;
     } else {
+      /* Put frame back into pool */
+      m_frameBuffer->insertFramePool(frame);
       m_txCount++;
     }
   }
-  m_frameBuffer->unlockIntermediateBuffer();
-  m_frameBuffer->mergeIntermediateBuffer();
+}
+
+inline uint32_t CANThread::getTimerValue() {
+  struct itimerspec ts;
+  timerfd_gettime(m_timerfd, &ts);
+  return ts.it_value.tv_sec*1000000 + ts.it_value.tv_nsec/1000;
+}
+
+inline void CANThread::adjustTimer(uint32_t interval, uint32_t value) {
+  struct itimerspec ts;
+  /* Setting the value to 0 disables the timer */
+  if (value == 0)
+    value = 1;
+  ts.it_interval.tv_sec = interval/1000000;
+  ts.it_interval.tv_nsec = (interval%1000000)*1000;
+  ts.it_value.tv_sec = value/1000000;
+  ts.it_value.tv_nsec = (value%1000000)*1000;
+  timerfd_settime(m_timerfd, 0, &ts, NULL);
+  if (m_debugOptions.timer) {
+    linfo << "Timer has been adjusted. Interval:" << interval << " Value:" << value << std::endl;
+  }
 }
 
 void CANThread::fireTimer() {
-  struct itimerspec ts;
-  /* Reset the timer of m_timerfd to m_timeout */
-  ts.it_interval.tv_sec = CAN_TIMEOUT/1000;
-  ts.it_interval.tv_nsec = (CAN_TIMEOUT%1000)*1000000;
-  ts.it_value.tv_sec = 0;
-  ts.it_value.tv_nsec = 1000;
-  timerfd_settime(m_timerfd, 0, &ts, NULL);
+  /* Instant expiry (so 1us) */
+  adjustTimer(CAN_TIMEOUT, 1);
 }

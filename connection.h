@@ -37,7 +37,7 @@ namespace cannelloni {
 
 #define RECEIVE_BUFFER_SIZE 1500
 #define UDP_PAYLOAD_SIZE 1472
-#define CAN_TIMEOUT 2000 /* ms */
+#define CAN_TIMEOUT 2000000 /* 2 sec in us */
 
 struct debugOptions_t {
   uint8_t can    : 1;
@@ -146,6 +146,10 @@ class CANThread : public Thread {
   private:
     void transmitBuffer();
     void fireTimer();
+    /* Returns the current timer value in us */
+    uint32_t getTimerValue();
+    void adjustTimer(uint32_t interval, uint32_t value);
+
   private:
     struct debugOptions_t m_debugOptions;
     int m_canSocket;
