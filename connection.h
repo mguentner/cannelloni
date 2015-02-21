@@ -77,7 +77,8 @@ class UDPThread : public Thread {
   public:
     UDPThread(const struct debugOptions_t &debugOptions,
               const struct sockaddr_in &remoteAddr,
-              const struct sockaddr_in &localAddr);
+              const struct sockaddr_in &localAddr,
+              bool sort);
 
     virtual int start();
     virtual void stop();
@@ -106,6 +107,7 @@ class UDPThread : public Thread {
 
   private:
     struct debugOptions_t m_debugOptions;
+    bool m_sort;
     int m_udpSocket;
     /*
      * We use the timerfd API of the Linux Kernel to send

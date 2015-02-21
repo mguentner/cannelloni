@@ -51,6 +51,7 @@ void printUsage() {
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
+  std::cout << "\t -s           \t\t disable frame sorting" << std::endl;
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
   std::cout << "\t\t\t u : enable debugging of udp frames" << std::endl;
@@ -64,6 +65,7 @@ void printUsage() {
 int main(int argc, char** argv) {
   int opt;
   bool remoteIPSupplied = false;
+  bool sortUDP = true;
   char remoteIP[INET_ADDRSTRLEN] = "127.0.0.1";
   uint16_t remotePort = 20000;
   char localIP[INET_ADDRSTRLEN] = "0.0.0.0";
@@ -76,7 +78,7 @@ int main(int argc, char** argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:T:d:h")) != -1) {
+  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:T:d:hs")) != -1) {
     switch(opt) {
       case 'l':
         localPort = strtoul(optarg, NULL, 10);
@@ -113,6 +115,9 @@ int main(int argc, char** argv) {
       case 'h':
         printUsage();
         return 0;
+      case 's':
+        sortUDP = false;
+        break;
       default:
         printUsage();
         return -1;
@@ -196,7 +201,7 @@ int main(int argc, char** argv) {
   localAddr.sin_port = htons(localPort);
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
-  UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr);
+  UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP);
   CANThread *canThread = new CANThread(debugOptions, canInterface);
   FrameBuffer *udpFrameBuffer = new FrameBuffer(1000,16000);
   FrameBuffer *canFrameBuffer = new FrameBuffer(1000,16000);

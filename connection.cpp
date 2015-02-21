@@ -81,7 +81,8 @@ void Thread::privRun() {
 
 UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
                      const struct sockaddr_in &remoteAddr,
-                     const struct sockaddr_in &localAddr)
+                     const struct sockaddr_in &localAddr,
+                     bool sort)
   : Thread()
   , m_canThread(NULL)
   , m_frameBuffer(NULL)
@@ -89,6 +90,7 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
   , m_timeout(100)
   , m_rxCount(0)
   , m_txCount(0)
+  , m_sort(sort)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
   memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_in));
@@ -317,7 +319,8 @@ void UDPThread::transmitBuffer() {
   struct timeval currentTime;
 
   m_frameBuffer->swapBuffers();
-  m_frameBuffer->sortIntermediateBuffer();
+  if (m_sort)
+    m_frameBuffer->sortIntermediateBuffer();
 
   const std::list<can_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
 
