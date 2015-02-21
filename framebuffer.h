@@ -51,11 +51,9 @@ namespace cannelloni {
  * use-cases of cannelloni.
  */
 
-#define FRAME_POOL_SIZE 1000
-
 class FrameBuffer {
   public:
-    FrameBuffer(std::size_t size=FRAME_POOL_SIZE);
+    FrameBuffer(size_t size, size_t max);
     /* Locks m_poolMutex and takes a free frame from m_framePool,
      * will grow the buffer if no frame is available
      * will return NULL if no memory is available
@@ -121,6 +119,15 @@ class FrameBuffer {
     /* Track current frame buffer size */
     size_t m_bufferSize;
     size_t m_intermediateBufferSize;
+    /*
+     * This is the maximum of frames that will be
+     * allocated. This guarantees that cannelloni stays
+     * within a fixed memory bounds.
+     *
+     * a size of zero means that the buffer can grow
+     * unlimited
+     */
+    size_t m_maxAllocCount;
 };
 
 }

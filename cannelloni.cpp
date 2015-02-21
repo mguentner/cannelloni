@@ -198,8 +198,8 @@ int main(int argc, char** argv) {
 
   UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr);
   CANThread *canThread = new CANThread(debugOptions, canInterface);
-  FrameBuffer *udpFrameBuffer = new FrameBuffer();
-  FrameBuffer *canFrameBuffer = new FrameBuffer();
+  FrameBuffer *udpFrameBuffer = new FrameBuffer(1000,16000);
+  FrameBuffer *canFrameBuffer = new FrameBuffer(1000,16000);
   udpThread->setCANThread(canThread);
   udpThread->setFrameBuffer(udpFrameBuffer);
   udpThread->setTimeoutTable(timeoutTable);

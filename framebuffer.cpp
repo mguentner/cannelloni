@@ -25,11 +25,12 @@
 
 using namespace cannelloni;
 
-FrameBuffer::FrameBuffer(std::size_t size) :
+FrameBuffer::FrameBuffer(size_t size, size_t max) :
   m_buffer(new std::list<can_frame*>),
   m_intermediateBuffer(new std::list<can_frame*>),
   m_bufferSize(0),
-  m_intermediateBufferSize(0)
+  m_intermediateBufferSize(0),
+  m_maxAllocCount(max)
 {
   resizePool(size);
 }
@@ -44,7 +45,18 @@ FrameBuffer::~FrameBuffer() {
 can_frame* FrameBuffer::requestFrame() {
   std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
   if (m_framePool.empty()) {
-    if (!resizePool(m_totalAllocCount)) {
+    bool resizePoolResult;
+    if (m_maxAllocCount > 0) {
+      if (m_maxAllocCount <= m_totalAllocCount) {
+        lerror << "Maximum of allocated frames reached." << std::endl;
+        return NULL;
+      }
+      resizePoolResult = resizePool(std::min(m_maxAllocCount-m_totalAllocCount,m_totalAllocCount));
+    } else {
+      /* If m_maxAllocCount is 0, we just grow the pool */
+      resizePoolResult = resizePool(m_totalAllocCount);
+    }
+    if (!resizePoolResult) {
       lerror << "Allocation failed. Not enough memory available." << std::endl;
       /* Test whether a partial alloc was possible */
       if (m_framePool.empty()) {
