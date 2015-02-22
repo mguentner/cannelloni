@@ -28,7 +28,7 @@ namespace cannelloni {
 
 /* Design Notes:
  *
- * This buffer contains can_frames received by CANThread or
+ * This buffer contains canfd_frames received by CANThread or
  * UDPThread and stores them in a queue until an event occurs that leads to
  * flushing the buffer (e.g. timeout in UDPThread).
  *
@@ -59,16 +59,16 @@ class FrameBuffer {
      * will return NULL if no memory is available
      */
     ~FrameBuffer();
-    can_frame* requestFrame();
+    canfd_frame* requestFrame();
 
     /* If a read fails we need to give the frame back */
-    void insertFramePool(can_frame *frame);
+    void insertFramePool(canfd_frame *frame);
 
     /* Inserts a frame into the frameBuffer (back) */
-    void insertFrame(can_frame *frame);
+    void insertFrame(canfd_frame *frame);
 
     /* Inserts a frame into the frameBuffer (front) */
-    void returnFrame(can_frame *frame);
+    void returnFrame(canfd_frame *frame);
 
     /* Instead of operating on the intermediateBuffer, we can
      * also request a frame from the buffer and put it back
@@ -76,12 +76,12 @@ class FrameBuffer {
      * This is useful when the consumer is a lot slower than
      * the producer (see Design Notes)
      */
-    can_frame* requestBufferFront();
+    canfd_frame* requestBufferFront();
 
     /* Swaps m_Buffer with m_intermediateBuffer */
     void swapBuffers();
 
-    /* Sorts m_intermediateBuffer by can_frame->id */
+    /* Sorts m_intermediateBuffer by canfd_frame->id */
     void sortIntermediateBuffer();
 
     /* merges m_intermediateBuffer back into m_poolMutex */
@@ -93,7 +93,7 @@ class FrameBuffer {
      * unlockIntermediateBuffer to unlock the mutex in order to
      * prevent a deadlock!
      */
-    const std::list<can_frame*>* getIntermediateBuffer();
+    const std::list<canfd_frame*>* getIntermediateBuffer();
 
     void unlockIntermediateBuffer();
 
@@ -107,9 +107,9 @@ class FrameBuffer {
     bool resizePool(std::size_t size);
 
   private:
-    std::list<can_frame*> m_framePool;
-    std::list<can_frame*> *m_buffer;
-    std::list<can_frame*> *m_intermediateBuffer;
+    std::list<canfd_frame*> m_framePool;
+    std::list<canfd_frame*> *m_buffer;
+    std::list<canfd_frame*> *m_intermediateBuffer;
 
     uint64_t m_totalAllocCount;
     /* When filling/swapping the buffers we currently need a mutex */

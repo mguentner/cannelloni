@@ -39,7 +39,7 @@ inline std::string splitFilename(const std::string &path) {
 #define lwarn std::cerr << WARNING_STRING << FUNCTION_STRING
 #define lerror std::cerr << ERROR_STRING << FUNCTION_STRING
 
-inline void printCANInfo(const can_frame *frame) {
+inline void printCANInfo(const canfd_frame *frame) {
   if (frame->can_id & CAN_EFF_FLAG) {
     std::cout << "EFF Frame ID[" << std::setw(5) << std::dec << (frame->can_id & CAN_EFF_MASK) << "]";
   } else {
@@ -48,13 +48,13 @@ inline void printCANInfo(const can_frame *frame) {
   if (frame->can_id & CAN_ERR_FLAG == 0)
     std::cout << "\t ERROR\t";
   else
-    std::cout << "\t Length:" << std::dec << (int) frame->can_dlc << "\t";
+    std::cout << "\t Length:" << std::dec << (int) frame->len << "\t";
 
   if (frame->can_id & CAN_RTR_FLAG)  {
       std::cout << "\tREMOTE";
   } else {
     /* This will also contain the error information */
-    for (uint8_t i=0; i<frame->can_dlc; i++)
+    for (uint8_t i=0; i<frame->len; i++)
       std::cout << std::setbase(16) << " " << int(frame->data[i]);
   }
   std::cout << std::endl;

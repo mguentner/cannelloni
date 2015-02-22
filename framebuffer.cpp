@@ -26,8 +26,8 @@
 using namespace cannelloni;
 
 FrameBuffer::FrameBuffer(size_t size, size_t max) :
-  m_buffer(new std::list<can_frame*>),
-  m_intermediateBuffer(new std::list<can_frame*>),
+  m_buffer(new std::list<canfd_frame*>),
+  m_intermediateBuffer(new std::list<canfd_frame*>),
   m_bufferSize(0),
   m_intermediateBufferSize(0),
   m_maxAllocCount(max)
@@ -42,7 +42,7 @@ FrameBuffer::~FrameBuffer() {
   delete m_intermediateBuffer;
 }
 
-can_frame* FrameBuffer::requestFrame() {
+canfd_frame* FrameBuffer::requestFrame() {
   std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
   if (m_framePool.empty()) {
     bool resizePoolResult;
@@ -67,7 +67,7 @@ can_frame* FrameBuffer::requestFrame() {
     }
   }
   /* If we reach this point, m_framePool is not depleted */
-  can_frame *ret = m_framePool.front();
+  canfd_frame *ret = m_framePool.front();
   /*
    * In a benchmark, splicing between three lists showed no
    * performance improvement over front() and pop_front(),
@@ -77,35 +77,35 @@ can_frame* FrameBuffer::requestFrame() {
   return ret;
 }
 
-void FrameBuffer::insertFramePool(can_frame *frame) {
+void FrameBuffer::insertFramePool(canfd_frame *frame) {
   std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
 
   m_framePool.push_back(frame);
 }
 
-void FrameBuffer::insertFrame(can_frame *frame) {
+void FrameBuffer::insertFrame(canfd_frame *frame) {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
 
   m_buffer->push_back(frame);
-  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->can_dlc;
+  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->len;
 }
 
-void FrameBuffer::returnFrame(can_frame *frame) {
+void FrameBuffer::returnFrame(canfd_frame *frame) {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
 
   m_buffer->push_front(frame);
-  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->can_dlc;
+  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->len;
 }
 
-can_frame* FrameBuffer::requestBufferFront() {
+canfd_frame* FrameBuffer::requestBufferFront() {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
   if (m_buffer->empty()) {
     return NULL;
   }
   else {
-    can_frame *ret = m_buffer->front();
+    canfd_frame *ret = m_buffer->front();
     m_buffer->pop_front();
-    m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + ret->can_dlc);
+    m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + ret->len);
     return ret;
   }
 }
@@ -122,7 +122,7 @@ void FrameBuffer::swapBuffers() {
 void FrameBuffer::sortIntermediateBuffer() {
   std::lock_guard<std::recursive_mutex> lock(m_intermediateBufferMutex);
 
-  m_intermediateBuffer->sort(can_frame_comp());
+  m_intermediateBuffer->sort(canfd_frame_comp());
 }
 
 void FrameBuffer::mergeIntermediateBuffer() {
@@ -135,7 +135,7 @@ void FrameBuffer::mergeIntermediateBuffer() {
 }
 
 
-const std::list<can_frame*>* FrameBuffer::getIntermediateBuffer() {
+const std::list<canfd_frame*>* FrameBuffer::getIntermediateBuffer() {
   /* We need to lock m_intermediateBuffer here */
   m_intermediateBufferMutex.lock();
   return m_intermediateBuffer;
@@ -154,13 +154,13 @@ void FrameBuffer::debug() {
 
 void FrameBuffer::clearPool() {
   std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
-  for (can_frame *f : m_framePool) {
+  for (canfd_frame *f : m_framePool) {
     delete f;
   }
-  for (can_frame *f : *m_intermediateBuffer) {
+  for (canfd_frame *f : *m_intermediateBuffer) {
     delete f;
   }
-  for (can_frame *f : *m_buffer) {
+  for (canfd_frame *f : *m_buffer) {
     delete f;
   }
   m_framePool.clear();
@@ -175,7 +175,7 @@ size_t FrameBuffer::getFrameBufferSize() {
 bool FrameBuffer::resizePool(std::size_t size) {
   std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
   for (size_t i=0; i<size; i++) {
-    can_frame *frame = new can_frame;
+    canfd_frame *frame = new canfd_frame;
     if (frame) {
       m_framePool.push_back(frame);
     } else {

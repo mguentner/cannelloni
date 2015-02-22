@@ -32,6 +32,8 @@
 #include <sys/timerfd.h>
 #include <sys/types.h>
 
+#include <linux/can/raw.h>
+
 #include <net/if.h>
 #include <arpa/inet.h>
 
@@ -205,27 +207,29 @@ void UDPThread::run() {
                     error = true;
                     break;
                   }
-                  /* We got at least a complete can_frame header */
-                  can_frame *frame = m_canThread->getFrameBuffer()->requestFrame();
+                  /* We got at least a complete canfd_frame header */
+                  canfd_frame *frame = m_canThread->getFrameBuffer()->requestFrame();
                   if (!frame) {
                     lerror << "Allocation error." << std::endl;
                     error = true;
                     break;
                   }
                   frame->can_id = ntohl(*((canid_t*)rawData));
-                  rawData+=4;
-                  frame->can_dlc = *rawData;
-                  rawData+=1;
+                  /* += 4 */
+                  rawData+=sizeof(canid_t);
+                  frame->len = *rawData;
+                  /* += 1 */
+                  rawData+=sizeof(frame->len);
                   /* RTR Frames have no data section although they have a dlc */
                   if ((frame->can_id & CAN_RTR_FLAG) == 0) {
                     /* Check again now that we know the dlc */
-                    if (rawData-buffer+frame->can_dlc > receivedBytes) {
+                    if (rawData-buffer+frame->len > receivedBytes) {
                       lerror << "Received incomplete packet / can header corrupt!" << std::endl;
                       error = true;
                       break;
                     }
-                    memcpy(frame->data, rawData, frame->can_dlc);
-                    rawData+=frame->can_dlc;
+                    memcpy(frame->data, rawData, frame->len);
+                    rawData+=frame->len;
                   }
                   m_canThread->transmitCANFrame(frame);
                   if (m_debugOptions.can) {
@@ -264,7 +268,7 @@ FrameBuffer* UDPThread::getFrameBuffer() {
   return m_frameBuffer;
 }
 
-void UDPThread::sendCANFrame(can_frame *frame) {
+void UDPThread::sendCANFrame(canfd_frame *frame) {
   m_frameBuffer->insertFrame(frame);
   if( m_frameBuffer->getFrameBufferSize() + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
     fireTimer();
@@ -322,13 +326,13 @@ void UDPThread::transmitBuffer() {
   if (m_sort)
     m_frameBuffer->sortIntermediateBuffer();
 
-  const std::list<can_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
+  const std::list<canfd_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
 
   data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
   for (auto it = buffer->begin(); it != buffer->end(); it++) {
-    can_frame *frame = *it;
+    canfd_frame *frame = *it;
     /* Check for packet overflow */
-    if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame->can_dlc) > UDP_PAYLOAD_SIZE) {
+    if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame->len) > UDP_PAYLOAD_SIZE) {
       dataPacket = (struct UDPDataPacket*) packetBuffer;
       dataPacket->version = CANNELLONI_FRAME_VERSION;
       dataPacket->op_code = DATA;
@@ -345,12 +349,14 @@ void UDPThread::transmitBuffer() {
       frameCount = 0;
     }
     *((canid_t *) (data)) = htonl(frame->can_id);
-    data+=4;
-    *data = frame->can_dlc;
-    data+=1;
+    /* += 4 */
+    data+=sizeof(canid_t);
+    *data = frame->len;
+    /* += 1 */
+    data+=sizeof(frame->len);
     if ((frame->can_id & CAN_RTR_FLAG) == 0) {
-      memcpy(data, frame->data, frame->can_dlc);
-      data+=frame->can_dlc;
+      memcpy(data, frame->data, frame->len);
+      data+=frame->len;
     }
     frameCount++;
   }
@@ -404,6 +410,7 @@ CANThread::CANThread(const struct debugOptions_t &debugOptions,
   , m_udpThread(NULL)
   , m_rxCount(0)
   , m_txCount(0)
+  , m_canfd(false)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
 }
@@ -411,6 +418,7 @@ CANThread::CANThread(const struct debugOptions_t &debugOptions,
 int CANThread::start() {
   struct timeval timeout;
   struct ifreq canInterface;
+  uint32_t canfd_on = 1;
   /* Setup our socket */
   m_canSocket = socket(PF_CAN, SOCK_RAW, CAN_RAW);
   if (m_canSocket < 0) {
@@ -425,11 +433,28 @@ int CANThread::start() {
   }
   m_localAddr.can_ifindex = canInterface.ifr_ifindex;
   m_localAddr.can_family = AF_CAN;
+  /* Check MTU of interface */
+  if (ioctl(m_canSocket, SIOCGIFMTU, &canInterface) < 0) {
+    lerror << "Could get MTU of interface >" << m_canInterfaceName << "<" <<  std::endl;
+  }
+  /* Check whether CAN_FD is possible */
+  if (canInterface.ifr_mtu == CANFD_MTU) {
+    /* Try to switch into CAN_FD mode */
+    if (setsockopt(m_canSocket, SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &canfd_on, sizeof(canfd_on))) {
+      lerror << "Could not enable CAN_FD." << std::endl;
+    } else {
+      m_canfd = true;
+    }
+
+  } else {
+    lerror << "CAN_FD is not supported on >" << m_canInterfaceName << "<" << std::endl;
+  }
 
   if (bind(m_canSocket, (struct sockaddr *)&m_localAddr, sizeof(m_localAddr)) < 0) {
     lerror << "Could not bind to interface" << std::endl;
     return -1;
   }
+
   /* Create timerfd */
   m_timerfd = timerfd_create(CLOCK_REALTIME, 0);
   if (m_timerfd < 0) {
@@ -481,11 +506,11 @@ void CANThread::run() {
     }
     if (FD_ISSET(m_canSocket, &readfds)) {
       /* Request frame from frameBuffer */
-      struct can_frame *frame = m_udpThread->getFrameBuffer()->requestFrame();
+      struct canfd_frame *frame = m_udpThread->getFrameBuffer()->requestFrame();
       if (frame == NULL) {
         continue;
       }
-      receivedBytes = recv(m_canSocket, frame, sizeof(struct can_frame), 0);
+      receivedBytes = recv(m_canSocket, frame, sizeof(struct canfd_frame), 0);
       if (receivedBytes < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
           /* Timeout occured */
@@ -496,9 +521,7 @@ void CANThread::run() {
           lerror << "CAN read error" << std::endl;
           return;
         }
-      } else if (receivedBytes < sizeof(struct can_frame) || receivedBytes == 0) {
-        lwarn << "Incomplete CAN frame" << std::endl;
-      } else if (receivedBytes) {
+      } else if (receivedBytes == CAN_MTU || receivedBytes == CANFD_MTU) {
         m_rxCount++;
         if (m_udpThread != NULL) {
           m_udpThread->sendCANFrame(frame);
@@ -506,6 +529,8 @@ void CANThread::run() {
         if (m_debugOptions.can) {
           printCANInfo(frame);
         }
+      } else {
+        lwarn << "Incomplete/Invalid CAN frame" << std::endl;
       }
     }
   }
@@ -535,21 +560,39 @@ FrameBuffer* CANThread::getFrameBuffer() {
   return m_frameBuffer;
 }
 
-void CANThread::transmitCANFrame(can_frame* frame) {
+void CANThread::transmitCANFrame(canfd_frame* frame) {
   m_frameBuffer->insertFrame(frame);
   fireTimer();
 }
 
 void CANThread::transmitBuffer() {
   ssize_t transmittedBytes = 0;
-  can_frame *frame;
   /* Loop here until buffer is empty or we cannot write anymore */
   while(1) {
-    frame = m_frameBuffer->requestBufferFront();
+    canfd_frame *frame = m_frameBuffer->requestBufferFront();
     if (frame == NULL)
       break;
-    transmittedBytes = write(m_canSocket, frame, sizeof(*frame));
-    if (transmittedBytes != sizeof(*frame)) {
+    /* Check whether we are operating on a CAN FD socket */
+    if (m_canfd) {
+      transmittedBytes = write(m_canSocket, frame, CANFD_MTU);
+    } else {
+      /* First check the length of the frame */
+      if (frame->len > 8) {
+        /* Something is wrong with the setup */
+        lwarn << "Received a frame with more than 8 Byte of data on a" << std::endl;
+        lwarn << "non CAN FD socket (CAN 2.0). Please check your setup!" << std::endl;
+        m_frameBuffer->insertFramePool(frame);
+        continue;
+      } else {
+        /* No CAN FD socket, use legacy MTU */
+        transmittedBytes = write(m_canSocket, frame, CAN_MTU);
+      }
+    }
+    if (transmittedBytes == CANFD_MTU || transmittedBytes == CAN_MTU) {
+      /* Put frame back into pool */
+      m_frameBuffer->insertFramePool(frame);
+      m_txCount++;
+    } else {
       /* Put frame back into buffer */
       m_frameBuffer->returnFrame(frame);
       /* Revisit this function after 25 us */
@@ -557,10 +600,6 @@ void CANThread::transmitBuffer() {
       if (m_debugOptions.can)
         linfo << "CAN write failed." << std::endl;
       break;
-    } else {
-      /* Put frame back into pool */
-      m_frameBuffer->insertFramePool(frame);
-      m_txCount++;
     }
   }
 }

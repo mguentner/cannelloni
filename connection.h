@@ -90,7 +90,7 @@ class UDPThread : public Thread {
     void setFrameBuffer(FrameBuffer *buffer);
     FrameBuffer *getFrameBuffer();
 
-    void sendCANFrame(can_frame *frame);
+    void sendCANFrame(canfd_frame *frame);
     void setTimeout(uint32_t timeout);
     uint32_t getTimeout();
 
@@ -144,7 +144,7 @@ class CANThread : public Thread {
     void setFrameBuffer(FrameBuffer *buffer);
     FrameBuffer *getFrameBuffer();
 
-    void transmitCANFrame(can_frame *frame);
+    void transmitCANFrame(canfd_frame *frame);
   private:
     void transmitBuffer();
     void fireTimer();
@@ -155,6 +155,7 @@ class CANThread : public Thread {
   private:
     struct debugOptions_t m_debugOptions;
     int m_canSocket;
+    bool m_canfd;
     /*
      * We use the timerfd API of the Linux Kernel to send
      * m_frameBuffer periodically

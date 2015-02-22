@@ -25,7 +25,9 @@
 
 namespace cannelloni {
 
+/* Base size of a canfd_frame (canid + dlc) */
 #define CANNELLONI_FRAME_BASE_SIZE 5
+/* Size in byte of UDPDataPacket */
 #define UDP_DATA_PACKET_BASE_SIZE 5
 
 #define CANNELLONI_FRAME_VERSION 1
@@ -57,10 +59,10 @@ struct __attribute__((__packed__)) UDPACKPacket {
  * Since we are buffering CAN Frames, it is a good idea to
  * to order them by their identifier to mimic a CAN bus
  */
-struct can_frame_comp
+struct canfd_frame_comp
 {
-  inline bool operator() (const struct can_frame *f1,
-                          const struct can_frame *f2) const
+  inline bool operator() (const struct canfd_frame *f1,
+                          const struct canfd_frame *f2) const
   {
     canid_t id1, id2;
     /* Be extra careful when doing the comparision */
