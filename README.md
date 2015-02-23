@@ -12,10 +12,10 @@ Features:
 - very high data rates possible (40 Mbit/s +)
 - custom timeouts for certain IDs (see below)
 - easy debugging
+- CAN FD support on interfaces that support it
 
 Not yet supported (send a PR ;) ):
 
-- CAN_FD
 - Resend lost UDP frames
 - Packet loss detection
 
