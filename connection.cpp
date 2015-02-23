@@ -216,20 +216,26 @@ void UDPThread::run() {
                   }
                   frame->can_id = ntohl(*((canid_t*)rawData));
                   /* += 4 */
-                  rawData+=sizeof(canid_t);
+                  rawData += sizeof(canid_t);
                   frame->len = *rawData;
                   /* += 1 */
-                  rawData+=sizeof(frame->len);
+                  rawData += sizeof(frame->len);
+                  /* If this is a CAN FD frame, also retrieve the flags */
+                  if (frame->len & CANFD_FRAME) {
+                    frame->flags = *rawData;
+                    /* += 1 */
+                    rawData += sizeof(frame->flags);
+                  }
                   /* RTR Frames have no data section although they have a dlc */
                   if ((frame->can_id & CAN_RTR_FLAG) == 0) {
                     /* Check again now that we know the dlc */
-                    if (rawData-buffer+frame->len > receivedBytes) {
+                    if (rawData-buffer+canfd_len(frame) > receivedBytes) {
                       lerror << "Received incomplete packet / can header corrupt!" << std::endl;
                       error = true;
                       break;
                     }
-                    memcpy(frame->data, rawData, frame->len);
-                    rawData+=frame->len;
+                    memcpy(frame->data, rawData, canfd_len(frame));
+                    rawData += canfd_len(frame);
                   }
                   m_canThread->transmitCANFrame(frame);
                   if (m_debugOptions.can) {
@@ -332,7 +338,7 @@ void UDPThread::transmitBuffer() {
   for (auto it = buffer->begin(); it != buffer->end(); it++) {
     canfd_frame *frame = *it;
     /* Check for packet overflow */
-    if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+frame->len) > UDP_PAYLOAD_SIZE) {
+    if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+canfd_len(frame)) > UDP_PAYLOAD_SIZE) {
       dataPacket = (struct UDPDataPacket*) packetBuffer;
       dataPacket->version = CANNELLONI_FRAME_VERSION;
       dataPacket->op_code = DATA;
@@ -350,13 +356,19 @@ void UDPThread::transmitBuffer() {
     }
     *((canid_t *) (data)) = htonl(frame->can_id);
     /* += 4 */
-    data+=sizeof(canid_t);
+    data += sizeof(canid_t);
     *data = frame->len;
     /* += 1 */
-    data+=sizeof(frame->len);
+    data += sizeof(frame->len);
+    /* If this is a CAN FD frame, also send the flags */
+    if (frame->len & CANFD_FRAME) {
+      *data = frame->flags;
+      /* += 1 */
+      data += sizeof(frame->flags);
+    }
     if ((frame->can_id & CAN_RTR_FLAG) == 0) {
-      memcpy(data, frame->data, frame->len);
-      data+=frame->len;
+      memcpy(data, frame->data, canfd_len(frame));
+      data+=canfd_len(frame);
     }
     frameCount++;
   }
@@ -523,6 +535,12 @@ void CANThread::run() {
         }
       } else if (receivedBytes == CAN_MTU || receivedBytes == CANFD_MTU) {
         m_rxCount++;
+        /* If it is a CAN FD frame, encode this in len */
+        if (receivedBytes == CANFD_MTU) {
+          frame->len |= CANFD_FRAME;
+        } else {
+          frame->len &= ~(CANFD_FRAME);
+        }
         if (m_udpThread != NULL) {
           m_udpThread->sendCANFrame(frame);
         }
@@ -574,13 +592,15 @@ void CANThread::transmitBuffer() {
       break;
     /* Check whether we are operating on a CAN FD socket */
     if (m_canfd) {
+      /* Clear the CANFD_FRAME bit in len */
+      frame->len &= ~(CANFD_FRAME);
       transmittedBytes = write(m_canSocket, frame, CANFD_MTU);
     } else {
       /* First check the length of the frame */
-      if (frame->len > 8) {
+      if (frame->len & CANFD_FRAME) {
         /* Something is wrong with the setup */
-        lwarn << "Received a frame with more than 8 Byte of data on a" << std::endl;
-        lwarn << "non CAN FD socket (CAN 2.0). Please check your setup!" << std::endl;
+        lwarn << "Received a CAN FD for a socket that only supports (CAN 2.0)." << std::endl;
+        frame->len &= ~(CANFD_FRAME);
         m_frameBuffer->insertFramePool(frame);
         continue;
       } else {

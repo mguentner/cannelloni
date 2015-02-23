@@ -30,7 +30,8 @@ namespace cannelloni {
 /* Size in byte of UDPDataPacket */
 #define UDP_DATA_PACKET_BASE_SIZE 5
 
-#define CANNELLONI_FRAME_VERSION 1
+#define CANNELLONI_FRAME_VERSION 2
+#define CANFD_FRAME              0x80
 
 enum op_codes {DATA, ACK, NACK};
 
@@ -78,5 +79,10 @@ struct canfd_frame_comp
     return id1 < id2;
   }
 };
+
+/* Helper function to get the real length of a frame */
+inline uint8_t canfd_len(const struct canfd_frame *f) {
+  return f->len & ~(CANFD_FRAME);
+}
 
 }

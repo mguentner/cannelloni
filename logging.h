@@ -25,6 +25,10 @@
 
 #include <linux/can.h>
 
+#include "can.h"
+
+using namespace cannelloni;
+
 inline std::string splitFilename(const std::string &path) {
   uint16_t pos = path.find_last_of("/\\");
   return path.substr(pos+1);
@@ -40,6 +44,11 @@ inline std::string splitFilename(const std::string &path) {
 #define lerror std::cerr << ERROR_STRING << FUNCTION_STRING
 
 inline void printCANInfo(const canfd_frame *frame) {
+  if (frame->len & CANFD_FRAME) {
+    std::cout << "FD|";
+  } else {
+    std::cout << "LC|";
+  }
   if (frame->can_id & CAN_EFF_FLAG) {
     std::cout << "EFF Frame ID[" << std::setw(5) << std::dec << (frame->can_id & CAN_EFF_MASK) << "]";
   } else {
@@ -48,13 +57,13 @@ inline void printCANInfo(const canfd_frame *frame) {
   if (frame->can_id & CAN_ERR_FLAG == 0)
     std::cout << "\t ERROR\t";
   else
-    std::cout << "\t Length:" << std::dec << (int) frame->len << "\t";
+    std::cout << "\t Length:" << std::dec << (int) canfd_len(frame) << "\t";
 
   if (frame->can_id & CAN_RTR_FLAG)  {
       std::cout << "\tREMOTE";
   } else {
     /* This will also contain the error information */
-    for (uint8_t i=0; i<frame->len; i++)
+    for (uint8_t i=0; i < canfd_len(frame); i++)
       std::cout << std::setbase(16) << " " << int(frame->data[i]);
   }
   std::cout << std::endl;

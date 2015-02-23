@@ -87,14 +87,14 @@ void FrameBuffer::insertFrame(canfd_frame *frame) {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
 
   m_buffer->push_back(frame);
-  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->len;
+  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
 }
 
 void FrameBuffer::returnFrame(canfd_frame *frame) {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
 
   m_buffer->push_front(frame);
-  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + frame->len;
+  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
 }
 
 canfd_frame* FrameBuffer::requestBufferFront() {
@@ -105,7 +105,7 @@ canfd_frame* FrameBuffer::requestBufferFront() {
   else {
     canfd_frame *ret = m_buffer->front();
     m_buffer->pop_front();
-    m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + ret->len);
+    m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + canfd_len(ret));
     return ret;
   }
 }
