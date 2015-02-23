@@ -338,7 +338,10 @@ void UDPThread::transmitBuffer() {
   for (auto it = buffer->begin(); it != buffer->end(); it++) {
     canfd_frame *frame = *it;
     /* Check for packet overflow */
-    if ((data-packetBuffer+CANNELLONI_FRAME_BASE_SIZE+canfd_len(frame)) > UDP_PAYLOAD_SIZE) {
+    if ((data-packetBuffer
+          +CANNELLONI_FRAME_BASE_SIZE
+          +canfd_len(frame)
+          +((frame->len & CANFD_FRAME)?sizeof(frame->flags):0)) > UDP_PAYLOAD_SIZE) {
       dataPacket = (struct UDPDataPacket*) packetBuffer;
       dataPacket->version = CANNELLONI_FRAME_VERSION;
       dataPacket->op_code = DATA;

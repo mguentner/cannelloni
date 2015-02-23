@@ -88,6 +88,10 @@ void FrameBuffer::insertFrame(canfd_frame *frame) {
 
   m_buffer->push_back(frame);
   m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
+
+  /* We need one more byte for CAN_FD Frames */
+  if (frame->len & CANFD_FRAME)
+    m_bufferSize++;
 }
 
 void FrameBuffer::returnFrame(canfd_frame *frame) {
@@ -95,6 +99,9 @@ void FrameBuffer::returnFrame(canfd_frame *frame) {
 
   m_buffer->push_front(frame);
   m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
+  /* We need one more byte for CAN_FD Frames */
+  if (frame->len & CANFD_FRAME)
+    m_bufferSize++;
 }
 
 canfd_frame* FrameBuffer::requestBufferFront() {
@@ -106,6 +113,9 @@ canfd_frame* FrameBuffer::requestBufferFront() {
     canfd_frame *ret = m_buffer->front();
     m_buffer->pop_front();
     m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + canfd_len(ret));
+    /* We need one more byte for CAN_FD Frames */
+    if (ret->len & CANFD_FRAME)
+      m_bufferSize--;
     return ret;
   }
 }
