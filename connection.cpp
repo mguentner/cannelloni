@@ -36,11 +36,15 @@
 
 #include <net/if.h>
 #include <arpa/inet.h>
+#include <string>
 
 #include "connection.h"
 #include "logging.h"
 
 using namespace cannelloni;
+
+#define EMPTY_ADDR_STRING 			"0.0.0.0"
+#define DEFAULT_CLIENT_TIMEOUT_SEC 		  60
 
 Thread::Thread()
   : m_started(false)
@@ -93,10 +97,18 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
   , m_rxCount(0)
   , m_txCount(0)
   , m_sort(sort)
+  ,m_bind2firstConnection(false)
+  ,m_clientConnectionTimeoutSec(DEFAULT_CLIENT_TIMEOUT_SEC)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
   memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_in));
   memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_in));
+  memset(&m_currentClientAddr, 0, sizeof(struct sockaddr_in));
+  if( EMPTY_ADDR_STRING == getAddressString(&m_remoteAddr) )  {
+    linfo << "Remote address is empty, cannelloni will bind to first connection" << std::endl;
+    m_bind2firstConnection = true;
+  }
+
 }
 
 int UDPThread::start() {
@@ -111,11 +123,19 @@ int UDPThread::start() {
     return -1;
   }
   /* Create timerfd */
-  m_timerfd = timerfd_create(CLOCK_REALTIME, 0);
-  if (m_timerfd < 0) {
+  m_timerFdUdp = timerfd_create(CLOCK_REALTIME, 0);
+  if (m_timerFdUdp < 0) {
     lerror << "timerfd_create error" << std::endl;
     return -1;
   }
+  /* Create timerfd */
+  m_timerFdClientConnection = timerfd_create(CLOCK_REALTIME, 0);
+  if (m_timerFdClientConnection < 0) {
+    lerror << "Client Connection error" << std::endl;
+    return -1;
+  }
+  linfo << "timerFd->" << std::dec << m_timerFdClientConnection << std::dec <<
+		 " ," <<  m_timerFdUdp << std::endl;
   return Thread::start();
 }
 
@@ -125,33 +145,56 @@ void UDPThread::stop() {
   fireTimer();
 }
 
+std::string UDPThread :: getAddressString( struct sockaddr_in * address ) {
+	char clientAddrStr[INET_ADDRSTRLEN];
+	std::string addr_string;
+
+	if (inet_ntop(AF_INET, &address->sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL)	{
+		 lwarn << "Could not convert client address" << std::endl;
+	} 	else {
+	  addr_string.append(clientAddrStr);
+	}
+	return addr_string;
+}
+
+bool
+UDPThread::setClientConnectionTimeoutSec(uint32_t sec) {
+  bool retval = false;
+  if (m_bind2firstConnection) {
+    m_clientConnectionTimeoutSec = sec;
+    retval= true;
+  }
+  return retval;
+}
+
 void UDPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
   uint8_t buffer[RECEIVE_BUFFER_SIZE];
-  struct sockaddr_in clientAddr;
   socklen_t clientAddrLen = sizeof(struct sockaddr_in);
-  char clientAddrStr[INET_ADDRSTRLEN];
 
   /* Set interval to m_timeout and an immediate timeout */
-  adjustTimer(m_timeout, 1);
+  adjustTimer(m_timerFdUdp, m_timeout, 1);
 
-  linfo << "UDPThread up and running" << std::endl;
+  linfo << "UDPThread up and listenning on port: " << std::dec << m_localAddr.sin_port << std::endl;
+  linfo << "Remote Address is set to " << getAddressString(&m_remoteAddr) << std::endl;
+
   while (m_started) {
     /* Prepare readfds */
     FD_ZERO(&readfds);
     FD_SET(m_udpSocket, &readfds);
-    FD_SET(m_timerfd, &readfds);
-    int ret = select(std::max(m_udpSocket,m_timerfd)+1, &readfds, NULL, NULL, NULL);
+    FD_SET(m_timerFdUdp, &readfds);
+    FD_SET(m_timerFdClientConnection, &readfds);
+    int ret = select(std::max(m_udpSocket,m_timerFdClientConnection)+1, &readfds, NULL, NULL, NULL);
     if (ret < 0) {
       lerror << "select error" << std::endl;
       break;
     }
-    if (FD_ISSET(m_timerfd, &readfds)) {
+    if (FD_ISSET(m_timerFdUdp, &readfds)) {
       ssize_t readBytes;
       uint64_t numExp;
       /* read from timer */
-      readBytes = read(m_timerfd, &numExp, sizeof(uint64_t));
+      readBytes = read(m_timerFdUdp, &numExp, sizeof(uint64_t));
       if (readBytes != sizeof(uint64_t)) {
         lerror << "timerfd read error" << std::endl;
         break;
@@ -163,89 +206,54 @@ void UDPThread::run() {
     }
     if (FD_ISSET(m_udpSocket, &readfds)) {
       /* Clear buffer */
-      memset(buffer, 0, RECEIVE_BUFFER_SIZE);
+      bzero(buffer,RECEIVE_BUFFER_SIZE);
+
       receivedBytes = recvfrom(m_udpSocket, buffer, RECEIVE_BUFFER_SIZE,
-          0, (struct sockaddr *) &clientAddr, &clientAddrLen);
+         0, (struct sockaddr *) &m_currentClientAddr, &clientAddrLen);
       if (receivedBytes < 0) {
-        lerror << "recvfrom error." << std::endl;
-        return;
+       lerror << "recvfrom error." << std::endl;
+       return;
       } else if (receivedBytes > 0) {
-        if (inet_ntop(AF_INET, &clientAddr.sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL) {
-          lwarn << "Could not convert client address" << std::endl;
-        } else {
-            if (memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
-              lwarn << "Received a packet from " << clientAddrStr
-                    << ", which is not set as a remote." << std::endl;
-            } else {
-              bool drop = false;
-              struct UDPDataPacket *data;
-              /* Check for OP Code */
-              data = (struct UDPDataPacket*) buffer;
-              if (data->version != CANNELLONI_FRAME_VERSION) {
-                lwarn << "Received wrong version" << std::endl;
-                drop = true;
-              }
-              if (data->op_code != DATA) {
-                lwarn << "Received wrong OP code" << std::endl;
-                drop = true;
-              }
-              if (ntohs(data->count) == 0) {
-                linfo << "Received empty packet" << std::endl;
-                drop = true;
-              }
-              if (!drop) {
-                uint8_t *rawData = buffer+UDP_DATA_PACKET_BASE_SIZE;
-                bool error;
-                if (m_debugOptions.udp) {
-                  linfo << "Received " << std::dec << receivedBytes << " Bytes from Host " << clientAddrStr
-                    << ":" << ntohs(clientAddr.sin_port) << std::endl;
+
+        if( m_bind2firstConnection && getAddressString(&m_remoteAddr) == EMPTY_ADDR_STRING )
+           {
+              /*Bind to this first client incoming, now the remote is the current..waiting a timeout*/
+         memcpy(&m_remoteAddr,&m_currentClientAddr,sizeof(m_currentClientAddr));
+         linfo << "Bound to remote Client: " << getAddressString(&m_remoteAddr)  << std::endl;
+           }
+
+        std::string addrString = getAddressString(&m_remoteAddr);
+
+         if ( addrString.empty() ) {
+           lwarn << "Could not convert client address" << std::endl;
+         } else {
+             if (memcmp(&(m_currentClientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
+               lwarn << "Received a packet from " << getAddressString(&m_currentClientAddr)
+                     << ", which is not set as a remote." << std::endl;
+             } else {
+
+              if ( handleMessage(buffer , receivedBytes) )
+              {
+                /*If message is correct start timeout*/
+                if( m_bind2firstConnection )
+                {
+                  /*disable and re-enable timeout*/
+                  adjustTimer(m_timerFdClientConnection,0, 0);
+                  adjustTimer(m_timerFdClientConnection,0, m_clientConnectionTimeoutSec*1000*1000);
                 }
-                m_rxCount++;
-                for (uint16_t i=0; i<ntohs(data->count); i++) {
-                  if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > receivedBytes) {
-                    lerror << "Received incomplete packet" << std::endl;
-                    error = true;
-                    break;
-                  }
-                  /* We got at least a complete canfd_frame header */
-                  canfd_frame *frame = m_canThread->getFrameBuffer()->requestFrame();
-                  if (!frame) {
-                    lerror << "Allocation error." << std::endl;
-                    error = true;
-                    break;
-                  }
-                  frame->can_id = ntohl(*((canid_t*)rawData));
-                  /* += 4 */
-                  rawData += sizeof(canid_t);
-                  frame->len = *rawData;
-                  /* += 1 */
-                  rawData += sizeof(frame->len);
-                  /* If this is a CAN FD frame, also retrieve the flags */
-                  if (frame->len & CANFD_FRAME) {
-                    frame->flags = *rawData;
-                    /* += 1 */
-                    rawData += sizeof(frame->flags);
-                  }
-                  /* RTR Frames have no data section although they have a dlc */
-                  if ((frame->can_id & CAN_RTR_FLAG) == 0) {
-                    /* Check again now that we know the dlc */
-                    if (rawData-buffer+canfd_len(frame) > receivedBytes) {
-                      lerror << "Received incomplete packet / can header corrupt!" << std::endl;
-                      error = true;
-                      break;
-                    }
-                    memcpy(frame->data, rawData, canfd_len(frame));
-                    rawData += canfd_len(frame);
-                  }
-                  m_canThread->transmitCANFrame(frame);
-                  if (m_debugOptions.can) {
-                    printCANInfo(frame);
-                  }
-                }
+              } else {
+                lwarn << "error handlinf Frame" << std::endl;
               }
-            }
-        }
+
+           }
+         }
       }
+    }
+    if (FD_ISSET(m_timerFdClientConnection, &readfds)) {
+          linfo << "Client Connection Timeout Expired"  << std::endl;
+          bzero(&m_remoteAddr,sizeof(m_remoteAddr));
+          /*stop timer*/
+          adjustTimer(m_timerFdClientConnection,0, 0);
     }
   }
   if (m_debugOptions.buffer) {
@@ -256,6 +264,83 @@ void UDPThread::run() {
   linfo << "Shutting down. UDP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
   shutdown(m_udpSocket, SHUT_RDWR);
   close(m_udpSocket);
+}
+
+
+bool
+UDPThread::handleMessage(uint8_t * buffer , size_t bufferSize) {
+
+  bool drop = false;
+  struct UDPDataPacket *data = NULL;
+  bool error = false;
+  /* Check for OP Code */
+  data = (struct UDPDataPacket*) buffer;
+  if (data->version != CANNELLONI_FRAME_VERSION) {
+    lwarn << "Received wrong version" << std::endl;
+    drop = true;
+  }
+  if (data->op_code != DATA) {
+    lwarn << "Received wrong OP code" << std::endl;
+    drop = true;
+  }
+  if (ntohs(data->count) == 0) {
+    linfo << "Received empty packet" << std::endl;
+    drop = true;
+  }
+  if (!drop) {
+    uint8_t *rawData = buffer+UDP_DATA_PACKET_BASE_SIZE;
+
+    if (m_debugOptions.udp) {
+      linfo << "Received " << std::dec << bufferSize << " Bytes from Host " << getAddressString (&m_remoteAddr)
+        << ":" << ntohs(m_remoteAddr.sin_port) << std::endl;
+    }
+    m_rxCount++;
+    for (uint16_t i=0; i<ntohs(data->count); i++) {
+      if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > bufferSize) {
+        lerror << "Received incomplete packet" << std::endl;
+        error = true;
+      }
+      /* We got at least a complete canfd_frame header */
+      canfd_frame *frame = m_canThread->getFrameBuffer()->requestFrame();
+      if (!frame) {
+        lerror << "Allocation error." << std::endl;
+        error = true;
+      }
+      frame->can_id = ntohl(*((canid_t*)rawData));
+      /* += 4 */
+      rawData += sizeof(canid_t);
+      frame->len = *rawData;
+      /* += 1 */
+      rawData += sizeof(frame->len);
+      /* If this is a CAN FD frame, also retrieve the flags */
+      if (frame->len & CANFD_FRAME) {
+        frame->flags = *rawData;
+        /* += 1 */
+        rawData += sizeof(frame->flags);
+      }
+      /* RTR Frames have no data section although they have a dlc */
+      if ((frame->can_id & CAN_RTR_FLAG) == 0) {
+        /* Check again now that we know the dlc */
+        if (rawData-buffer+canfd_len(frame) > bufferSize) {
+          lerror << "Received incomplete packet / can header corrupt!" << std::endl;
+          error = true;
+        }
+        memcpy(frame->data, rawData, canfd_len(frame));
+        rawData += canfd_len(frame);
+      }
+      m_canThread->transmitCANFrame(frame);
+      if (m_debugOptions.can) {
+        printCANInfo(frame);
+      }
+    }
+  } else {
+    if(m_bind2firstConnection) {
+      linfo << "remote ip " << getAddressString(&m_remoteAddr) << " NOT handled as remote  " << std::endl;
+      /*reset value*/
+      bzero(&m_remoteAddr,sizeof(m_remoteAddr));
+    }
+  }
+  return ! error;
 }
 
 void UDPThread::setCANThread(CANThread *thread) {
@@ -290,15 +375,14 @@ void UDPThread::sendCANFrame(canfd_frame *frame) {
     if (it != m_timeoutTable.end()) {
       uint32_t timeout = it->second;
       if (timeout < m_timeout) {
-        if (timeout < getTimerValue()) {
+        if (timeout < getTimerValue(m_timerFdUdp)) {
           if (m_debugOptions.timer) {
             linfo << "Found timeout entry for ID " << can_id << ". Adjusting timer." << std::endl;
           }
           /* Let buffer expire in timeout ms */
-          adjustTimer(m_timeout, timeout);
+          adjustTimer(m_timerFdUdp,m_timeout, timeout);
         }
       }
-
     }
 
   }
@@ -392,22 +476,22 @@ void UDPThread::transmitBuffer() {
   delete[] packetBuffer;
 }
 
-inline uint32_t UDPThread::getTimerValue() {
+inline uint32_t UDPThread::getTimerValue(int timerFd) {
   struct itimerspec ts;
-  timerfd_gettime(m_timerfd, &ts);
+  timerfd_gettime(timerFd, &ts);
   return ts.it_value.tv_sec*1000000 + ts.it_value.tv_nsec/1000;
 }
 
-inline void UDPThread::adjustTimer(uint32_t interval, uint32_t value) {
+inline void UDPThread::adjustTimer(int timerFd , uint32_t interval, uint32_t value) {
   struct itimerspec ts;
   /* Setting the value to 0 disables the timer */
   if (value == 0)
-    value = 1;
+    //value = 1;
   ts.it_interval.tv_sec = interval/1000000;
   ts.it_interval.tv_nsec = (interval%1000000)*1000;
   ts.it_value.tv_sec = value/1000000;
   ts.it_value.tv_nsec = (value%1000000)*1000;
-  timerfd_settime(m_timerfd, 0, &ts, NULL);
+  timerfd_settime(timerFd, 0, &ts, NULL);
   if (m_debugOptions.timer) {
     linfo << "Timer has been adjusted. Interval:" << interval << " Value:" << value << std::endl;
   }
@@ -415,7 +499,7 @@ inline void UDPThread::adjustTimer(uint32_t interval, uint32_t value) {
 
 void UDPThread::fireTimer() {
   /* Instant expiry (so 1us) */
-  adjustTimer(m_timeout, 1);
+  adjustTimer(m_timerFdUdp,m_timeout, 1);
 }
 
 CANThread::CANThread(const struct debugOptions_t &debugOptions,
@@ -636,8 +720,8 @@ inline uint32_t CANThread::getTimerValue() {
 inline void CANThread::adjustTimer(uint32_t interval, uint32_t value) {
   struct itimerspec ts;
   /* Setting the value to 0 disables the timer */
-  if (value == 0)
-    value = 1;
+//  if (value == 0)
+//    value = 1;
   ts.it_interval.tv_sec = interval/1000000;
   ts.it_interval.tv_nsec = (interval%1000000)*1000;
   ts.it_value.tv_sec = value/1000000;

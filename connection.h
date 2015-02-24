@@ -32,6 +32,7 @@
 
 #include "can.h"
 #include "framebuffer.h"
+#include <string>
 
 namespace cannelloni {
 
@@ -96,14 +97,19 @@ class UDPThread : public Thread {
 
     void setTimeoutTable(std::map<uint32_t,uint32_t> &timeoutTable);
     std::map<uint32_t,uint32_t>& getTimeoutTable();
+    bool setClientConnectionTimeoutSec(uint32_t sec);
 
   private:
     /* This function transmits m_frameBuffer */
     void transmitBuffer();
     void fireTimer();
     /* Returns the current timer value in us */
-    uint32_t getTimerValue();
-    void adjustTimer(uint32_t interval, uint32_t value);
+    uint32_t getTimerValue(int timerfd);
+    void adjustTimer(int timerfd , uint32_t interval, uint32_t value);
+    /*Handler for Incoming Frame
+     * @retval : true if ok , false if any error*/
+    bool handleMessage(uint8_t * buffer, size_t bufferSize);
+    std::string getAddressString( struct sockaddr_in * address );
 
   private:
     struct debugOptions_t m_debugOptions;
@@ -113,13 +119,16 @@ class UDPThread : public Thread {
      * We use the timerfd API of the Linux Kernel to send
      * m_frameBuffer periodically
      */
-    int m_timerfd;
+    int  	m_timerFdUdp;
+    int 	 m_timerFdClientConnection;
+    bool 	m_bind2firstConnection;
+    uint32_t m_clientConnectionTimeoutSec;
 
     CANThread *m_canThread;
     FrameBuffer *m_frameBuffer;
     struct sockaddr_in m_localAddr;
     struct sockaddr_in m_remoteAddr;
-
+    struct sockaddr_in m_currentClientAddr;
     uint8_t m_sequenceNumber;
     /* Timeout variables */
     uint32_t m_timeout;
@@ -151,6 +160,7 @@ class CANThread : public Thread {
     /* Returns the current timer value in us */
     uint32_t getTimerValue();
     void adjustTimer(uint32_t interval, uint32_t value);
+
 
   private:
     struct debugOptions_t m_debugOptions;
