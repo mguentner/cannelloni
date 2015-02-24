@@ -105,8 +105,8 @@ class UDPThread : public Thread {
     void fireTimer();
     /* Returns the current timer value in us */
     uint32_t getTimerValue(int timerfd);
-    void 	 adjustTimer(int timerfd , uint32_t interval, uint32_t value);
-    /*Handle Incoming Frame
+    void adjustTimer(int timerfd , uint32_t interval, uint32_t value);
+    /*Handler for Incoming Frame
      * @retval : true if ok , false if any error*/
     bool handleMessage(uint8_t * buffer, size_t bufferSize);
     std::string getAddressString( struct sockaddr_in * address );
@@ -120,7 +120,7 @@ class UDPThread : public Thread {
      * m_frameBuffer periodically
      */
     int  	m_timerFdUdp;
-    int 	m_timerFdClientConnection;
+    int 	 m_timerFdClientConnection;
     bool 	m_bind2firstConnection;
     uint32_t m_clientConnectionTimeoutSec;
 

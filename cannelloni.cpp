@@ -200,14 +200,11 @@ int main(int argc, char** argv) {
 
   remoteAddr.sin_family = AF_INET;
   remoteAddr.sin_port = htons(remotePort);
-  if (remoteIPSupplied)
-  {
-	  inet_pton(AF_INET, remoteIP, &remoteAddr.sin_addr);
-  }
-  else
-  {
-	  /*ip not supplied, set to any*/
-	  remoteAddr.sin_addr.s_addr  = INADDR_ANY;
+  if (remoteIPSupplied) {
+    inet_pton(AF_INET, remoteIP, &remoteAddr.sin_addr);
+  } else {
+    /*ip not supplied, set to any*/
+    remoteAddr.sin_addr.s_addr  = INADDR_ANY;
   }
 
   localAddr.sin_family = AF_INET;
@@ -215,12 +212,10 @@ int main(int argc, char** argv) {
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
   UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP);
-  if (!remoteIPSupplied)
-  {
-	  if ( ! udpThread->setClientConnectionTimeoutSec(clientTimeout))
-	  {
-		  return -1;
-	  }
+  if (!remoteIPSupplied) {
+    if ( ! udpThread->setClientConnectionTimeoutSec(clientTimeout)) {
+      return -1;
+    }
   }
   CANThread *canThread = new CANThread(debugOptions, canInterface);
   FrameBuffer *udpFrameBuffer = new FrameBuffer(1000,16000);

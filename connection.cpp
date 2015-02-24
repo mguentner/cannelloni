@@ -104,10 +104,9 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
   memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_in));
   memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_in));
   memset(&m_currentClientAddr, 0, sizeof(m_currentClientAddr));
-  if( "0.0.0.0" == getAddressString(&m_remoteAddr) )
-  {
-	  linfo << "Remote address is empty, cannelloni will bind to first connection" << std::endl;
-	  m_bind2firstConnection = true;
+  if( EMPTY_ADDR_STRING == getAddressString(&m_remoteAddr) )  {
+    linfo << "Remote address is empty, cannelloni will bind to first connection" << std::endl;
+    m_bind2firstConnection = true;
   }
 
 }
@@ -146,32 +145,26 @@ void UDPThread::stop() {
   fireTimer();
 }
 
-std::string UDPThread :: getAddressString( struct sockaddr_in * address )
-{
+std::string UDPThread :: getAddressString( struct sockaddr_in * address ) {
 	char clientAddrStr[INET_ADDRSTRLEN];
 	std::string addr_string;
 
-	if (inet_ntop(AF_INET, &address->sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL)
-	{
+	if (inet_ntop(AF_INET, &address->sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL)	{
 		 lwarn << "Could not convert client address" << std::endl;
-	}
-	else
-	{
-		addr_string.append(clientAddrStr);
+	} 	else {
+	  addr_string.append(clientAddrStr);
 	}
 	return addr_string;
 }
 
 bool
-UDPThread::setClientConnectionTimeoutSec(uint32_t sec)
-{
-	bool retval = false;
-	if (m_bind2firstConnection)
-	{
-		m_clientConnectionTimeoutSec = sec;
-		retval= true;
-	}
-	return retval;
+UDPThread::setClientConnectionTimeoutSec(uint32_t sec) {
+  bool retval = false;
+  if (m_bind2firstConnection) {
+    m_clientConnectionTimeoutSec = sec;
+    retval= true;
+  }
+  return retval;
 }
 
 void UDPThread::run() {
@@ -222,34 +215,32 @@ void UDPThread::run() {
         return;
       } else if (receivedBytes > 0) {
 
-    	if( m_bind2firstConnection && getAddressString(&m_remoteAddr) == EMPTY_ADDR_STRING )
-        {
-        	  /*Bind to this first client incoming, now the remote is the current..waiting a timeout*/
-    		memcpy(&m_remoteAddr,&m_currentClientAddr,sizeof(m_currentClientAddr));
-    		linfo << "Bound to remote Client: " << getAddressString(&m_remoteAddr)  << std::endl;
+        if( m_bind2firstConnection && getAddressString(&m_remoteAddr) == EMPTY_ADDR_STRING ) {
+          /*Bind to this first client incoming, now the remote is the current..waiting a timeout*/
+          memcpy(&m_remoteAddr,&m_currentClientAddr,sizeof(m_currentClientAddr));
+          linfo << "Bound to remote Client: " << getAddressString(&m_remoteAddr)  << std::endl;
         }
 
-    	std::string addrString = getAddressString(&m_remoteAddr);
+        std::string addrString = getAddressString(&m_remoteAddr);
 
         if ( addrString.empty() ) {
-          lwarn << "Could not convert client address" << std::endl;
+            lwarn << "Could not convert client address" << std::endl;
         } else {
-            if (memcmp(&(m_currentClientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
-              lwarn << "Received a packet from " << getAddressString(&m_currentClientAddr)
-                    << ", which is not set as a remote." << std::endl;
-            } else {
+          if (memcmp(&(m_currentClientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
+            lwarn << "Received a packet from " << getAddressString(&m_currentClientAddr)
+                  << ", which is not set as a remote." << std::endl;
+          } else {
 
-			  if( m_bind2firstConnection )
-			  {
-				/*disable and re-enable timeout*/
-				adjustTimer(m_timerFdClientConnection,0, 0);
-				adjustTimer(m_timerFdClientConnection,0, m_clientConnectionTimeoutSec*1000*1000);
-			  }
-              if ( ! handleMessage(buffer , receivedBytes) )
-              {
-            	  lwarn << "error handlinf Frame" << std::endl;
-              }
+            if( m_bind2firstConnection ) {
+              /*disable and re-enable timeout*/
+              adjustTimer(m_timerFdClientConnection,0, 0);
+              adjustTimer(m_timerFdClientConnection,0, m_clientConnectionTimeoutSec*1000*1000);
             }
+            /*Let's handle the message!*/
+            if ( ! handleMessage(buffer , receivedBytes) ) {
+              lwarn << "error handling Frame" << std::endl;
+            }
+          }
         }
       }
       if (FD_ISSET(m_timerFdClientConnection, &readfds)) {
@@ -259,8 +250,6 @@ void UDPThread::run() {
           	adjustTimer(m_timerFdClientConnection,0, 0);
       }
     }
-
-
   }
   if (m_debugOptions.buffer) {
     m_frameBuffer->debug();
@@ -274,8 +263,7 @@ void UDPThread::run() {
 
 
 bool
-UDPThread::handleMessage(uint8_t * buffer , size_t bufferSize )
-{
+UDPThread::handleMessage(uint8_t * buffer , size_t bufferSize) {
     bool drop = false;
     struct UDPDataPacket *data;
     bool error = false;
@@ -333,14 +321,12 @@ UDPThread::handleMessage(uint8_t * buffer , size_t bufferSize )
           printCANInfo(frame);
         }
       }
-    }
-    else
-    {
-    	if(m_bind2firstConnection){
-    		linfo << "remote ip " << getAddressString(&m_remoteAddr) << " NOT handled as remote  " << std::endl;
-			/*reset value*/
-			bzero(&m_remoteAddr,sizeof(m_remoteAddr));
-    	}
+    } else {
+      if(m_bind2firstConnection) {
+        linfo << "remote ip " << getAddressString(&m_remoteAddr) << " NOT handled as remote  " << std::endl;
+        /*reset value*/
+        bzero(&m_remoteAddr,sizeof(m_remoteAddr));
+      }
     }
     return ! error;
 }
