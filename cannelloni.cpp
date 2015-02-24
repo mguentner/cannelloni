@@ -55,8 +55,8 @@ void printUsage() {
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
   std::cout << "\t\t\t u : enable debugging of udp frames" << std::endl;
-  std::cout << "\t\t\t b : enable debugging of interal buffer structures" << std::endl;
-  std::cout << "\t\t\t t : enable debugging of interal timers" << std::endl;
+  std::cout << "\t\t\t b : enable debugging of internal buffer structures" << std::endl;
+  std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
   std::cout << "Mandatory options:" << std::endl;
   std::cout << "\t -R IP   \t\t remote IP" << std::endl;
