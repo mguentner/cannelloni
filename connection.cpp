@@ -215,39 +215,34 @@ void UDPThread::run() {
        return;
       } else if (receivedBytes > 0) {
 
-        if( m_bind2firstConnection && getAddressString(&m_remoteAddr) == EMPTY_ADDR_STRING )
-           {
-              /*Bind to this first client incoming, now the remote is the current..waiting a timeout*/
-         memcpy(&m_remoteAddr,&m_currentClientAddr,sizeof(m_currentClientAddr));
-         linfo << "Bound to remote Client: " << getAddressString(&m_remoteAddr)  << std::endl;
-           }
-
+        if( m_bind2firstConnection && getAddressString(&m_remoteAddr) == EMPTY_ADDR_STRING ) {
+          /*Bind to this first client incoming, now the remote is the current..waiting a timeout*/
+          memcpy(&m_remoteAddr,&m_currentClientAddr,sizeof(m_currentClientAddr));
+          linfo << "Bound to remote Client: " << getAddressString(&m_remoteAddr)  << std::endl;
+        }
         std::string addrString = getAddressString(&m_remoteAddr);
 
-         if ( addrString.empty() ) {
-           lwarn << "Could not convert client address" << std::endl;
-         } else {
-             if (memcmp(&(m_currentClientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
-               lwarn << "Received a packet from " << getAddressString(&m_currentClientAddr)
-                     << ", which is not set as a remote." << std::endl;
-             } else {
+        if ( addrString.empty() ) {
+         lwarn << "Could not convert client address" << std::endl;
+        } else {
+          if (memcmp(&(m_currentClientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
+           lwarn << "Received a packet from " << getAddressString(&m_currentClientAddr)
+                 << ", which is not set as a remote." << std::endl;
+          } else {
 
-              if ( handleMessage(buffer , receivedBytes) )
-              {
-                /*If message is correct start timeout*/
-                if( m_bind2firstConnection )
-                {
-                  /*disable and re-enable timeout*/
-                  adjustTimer(m_timerFdClientConnection,0, 0);
-                  adjustTimer(m_timerFdClientConnection,0, m_clientConnectionTimeoutSec*1000*1000);
-                }
+            if ( handleMessage(buffer , receivedBytes) ) {
+              /*If message is correct start timeout*/
+              if( m_bind2firstConnection ) {
+                /*disable and re-enable timeout*/
+                adjustTimer(m_timerFdClientConnection,0, 0);
+                adjustTimer(m_timerFdClientConnection,0, m_clientConnectionTimeoutSec*1000*1000);
               } else {
                 lwarn << "error handlinf Frame" << std::endl;
               }
-
-           }
-         }
-      }
+            }
+          }
+        }
+      } /*end byte rx > 0*/
     }
     if (FD_ISSET(m_timerFdClientConnection, &readfds)) {
           linfo << "Client Connection Timeout Expired"  << std::endl;
@@ -384,7 +379,6 @@ void UDPThread::sendCANFrame(canfd_frame *frame) {
         }
       }
     }
-
   }
 }
 
