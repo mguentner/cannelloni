@@ -119,9 +119,9 @@ class UDPThread : public Thread {
      * We use the timerfd API of the Linux Kernel to send
      * m_frameBuffer periodically
      */
-    int  	m_timerFdUdp;
-    int 	 m_timerFdClientConnection;
-    bool 	m_bind2firstConnection;
+    int m_timerFdUdp;
+    int m_timerFdClientConnection;
+    bool m_bind2firstConnection;
     uint32_t m_clientConnectionTimeoutSec;
 
     CANThread *m_canThread;

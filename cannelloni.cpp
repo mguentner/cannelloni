@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
           debugOptions.timer = 1;
         break;
       case 'c':
-    	clientTimeout =  strtoul(optarg, NULL, 10);
+        clientTimeout =  strtoul(optarg, NULL, 10);
 		break;
       case 'h':
         printUsage();
