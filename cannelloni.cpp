@@ -58,8 +58,8 @@ void printUsage() {
   std::cout << "\t\t\t b : enable debugging of interal buffer structures" << std::endl;
   std::cout << "\t\t\t t : enable debugging of interal timers" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
-  std::cout << "Mandatory options:" << std::endl;
   std::cout << "\t -R IP   \t\t remote IP" << std::endl;
+  std::cout << "\t -c seconds \t\t client timeout Second if remote Ip not supplied" << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -75,10 +75,11 @@ int main(int argc, char** argv) {
   std::string timeoutTableFile;
   /* Key is CAN ID, Value is timeout in us */
   std::map<uint32_t, uint32_t> timeoutTable;
+  uint32_t clientTimeout = 0;
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:T:d:hs")) != -1) {
+  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:T:d:c:hs")) != -1) {
     switch(opt) {
       case 'l':
         localPort = strtoul(optarg, NULL, 10);
@@ -112,6 +113,9 @@ int main(int argc, char** argv) {
         if (strchr(optarg, 't'))
           debugOptions.timer = 1;
         break;
+      case 'c':
+        clientTimeout =  strtoul(optarg, NULL, 10);
+		break;
       case 'h':
         printUsage();
         return 0;
@@ -124,9 +128,10 @@ int main(int argc, char** argv) {
     }
   }
   if (!remoteIPSupplied) {
-    std::cout << "Error: Remote IP not supplied" << std::endl;
-    printUsage();
-    return -1;
+    std::cout << "Remote IP not supplied , will be bound to the first incoming connection" << std::endl;
+  }
+  if (!remoteIPSupplied && clientTimeout == 0) {
+    std::cout << "Remote IP not selected an inactivity connection either. Timeout will be set to default" << std::endl;
   }
   if (bufferTimeout == 0) {
     std::cout << "Error: Only non-zero timeouts are allowed" << std::endl;
@@ -195,13 +200,23 @@ int main(int argc, char** argv) {
 
   remoteAddr.sin_family = AF_INET;
   remoteAddr.sin_port = htons(remotePort);
-  inet_pton(AF_INET, remoteIP, &remoteAddr.sin_addr);
+  if (remoteIPSupplied) {
+    inet_pton(AF_INET, remoteIP, &remoteAddr.sin_addr);
+  } else {
+    /*ip not supplied, set to any*/
+    remoteAddr.sin_addr.s_addr  = INADDR_ANY;
+  }
 
   localAddr.sin_family = AF_INET;
   localAddr.sin_port = htons(localPort);
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
   UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP);
+  if (!remoteIPSupplied) {
+    if ( ! udpThread->setClientConnectionTimeoutSec(clientTimeout)) {
+      return -1;
+    }
+  }
   CANThread *canThread = new CANThread(debugOptions, canInterface);
   FrameBuffer *udpFrameBuffer = new FrameBuffer(1000,16000);
   FrameBuffer *canFrameBuffer = new FrameBuffer(1000,16000);
