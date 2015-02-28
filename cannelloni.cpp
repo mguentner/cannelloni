@@ -32,7 +32,8 @@
 
 #include <sys/signalfd.h>
 
-#include "connection.h"
+#include "udpthread.h"
+#include "canthread.h"
 #include "framebuffer.h"
 #include "logging.h"
 #include "csvmapparser.h"
@@ -205,10 +206,10 @@ int main(int argc, char** argv) {
   CANThread *canThread = new CANThread(debugOptions, canInterface);
   FrameBuffer *udpFrameBuffer = new FrameBuffer(1000,16000);
   FrameBuffer *canFrameBuffer = new FrameBuffer(1000,16000);
-  udpThread->setCANThread(canThread);
+  udpThread->setPeerThread(canThread);
   udpThread->setFrameBuffer(udpFrameBuffer);
   udpThread->setTimeoutTable(timeoutTable);
-  canThread->setUDPThread(udpThread);
+  canThread->setPeerThread(udpThread);
   canThread->setFrameBuffer(canFrameBuffer);
   udpThread->setTimeout(bufferTimeout);
   udpThread->start();

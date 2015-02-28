@@ -20,36 +20,33 @@
 
 #pragma once
 
-#include <linux/can/raw.h>
-#include <stdint.h>
-
-#include "thread.h"
-#include "framebuffer.h"
+#include <thread>
 
 namespace cannelloni {
 
-struct debugOptions_t {
-  uint8_t can    : 1;
-  uint8_t udp    : 1;
-  uint8_t buffer : 1;
-  uint8_t timer  : 1;
-};
-
-class ConnectionThread : public Thread {
+class Thread {
   public:
-    ConnectionThread();
-    virtual ~ConnectionThread();
-
-    virtual void transmitFrame(canfd_frame *frame) = 0;
-    void setFrameBuffer(FrameBuffer *buffer);
-    FrameBuffer *getFrameBuffer();
-
-    void setPeerThread(ConnectionThread *thread);
-    ConnectionThread* getPeerThread();
+    Thread();
+    virtual ~Thread();
+    virtual int start();
+    /* this is function tell the thread to stop */
+    virtual void stop();
+    /* joins the thread */
+    void join();
+    /* */
+    bool isRunning();
+    /* */
+    virtual void run() = 0;
+  private:
+    /* thread control loop */
+    void privRun();
 
   protected:
-    FrameBuffer *m_frameBuffer;
-    ConnectionThread *m_peerThread;
+    /* determines when to break from run() */
+    bool m_started;
+  private:
+    bool m_running;
+    std::thread *m_privThread;
 };
 
 }

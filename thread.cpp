@@ -1,5 +1,5 @@
 /*
- * This file is part of cannelloni, a SocketCAN over ethernet tunnel.
+ * This file is part of cannelloni, a SocketCAN over Ethernet tunnel.
  *
  * Copyright (C) 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
  *
@@ -18,38 +18,46 @@
  *
  */
 
-#pragma once
-
-#include <linux/can/raw.h>
-#include <stdint.h>
-
 #include "thread.h"
-#include "framebuffer.h"
 
-namespace cannelloni {
+using namespace cannelloni;
 
-struct debugOptions_t {
-  uint8_t can    : 1;
-  uint8_t udp    : 1;
-  uint8_t buffer : 1;
-  uint8_t timer  : 1;
-};
+Thread::Thread()
+  : m_started(false)
+  , m_running(false)
+  , m_privThread(NULL)
+{ }
 
-class ConnectionThread : public Thread {
-  public:
-    ConnectionThread();
-    virtual ~ConnectionThread();
-
-    virtual void transmitFrame(canfd_frame *frame) = 0;
-    void setFrameBuffer(FrameBuffer *buffer);
-    FrameBuffer *getFrameBuffer();
-
-    void setPeerThread(ConnectionThread *thread);
-    ConnectionThread* getPeerThread();
-
-  protected:
-    FrameBuffer *m_frameBuffer;
-    ConnectionThread *m_peerThread;
-};
-
+Thread::~Thread() {
+  if (m_started)
+    stop();
 }
+
+int Thread::start() {
+  m_started = true;
+  m_privThread = new std::thread(&Thread::privRun, this);
+  m_running = true;
+  return 0;
+}
+
+void Thread::stop() {
+  m_started = false;
+}
+
+void Thread::join() {
+  if (m_privThread)
+    m_privThread->join();
+  delete m_privThread;
+}
+
+bool Thread::isRunning() {
+  return m_running;
+}
+
+void Thread::privRun() {
+  run();
+  m_running = false;
+  m_started = false;
+}
+
+

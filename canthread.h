@@ -20,36 +20,43 @@
 
 #pragma once
 
-#include <linux/can/raw.h>
+#include <string>
 #include <stdint.h>
 
-#include "thread.h"
-#include "framebuffer.h"
+#include "connection.h"
+#include "timer.h"
 
 namespace cannelloni {
 
-struct debugOptions_t {
-  uint8_t can    : 1;
-  uint8_t udp    : 1;
-  uint8_t buffer : 1;
-  uint8_t timer  : 1;
-};
+#define CAN_TIMEOUT 2000000 /* 2 sec in us */
 
-class ConnectionThread : public Thread {
+class CANThread : public ConnectionThread {
   public:
-    ConnectionThread();
-    virtual ~ConnectionThread();
+    CANThread(const struct debugOptions_t &debugOptions,
+              const std::string &canInterfaceName);
+    virtual ~CANThread();
+    virtual int start();
+    virtual void stop();
+    virtual void run();
 
-    virtual void transmitFrame(canfd_frame *frame) = 0;
-    void setFrameBuffer(FrameBuffer *buffer);
-    FrameBuffer *getFrameBuffer();
+    virtual void transmitFrame(canfd_frame *frame);
 
-    void setPeerThread(ConnectionThread *thread);
-    ConnectionThread* getPeerThread();
+  private:
+    void transmitBuffer();
+    void fireTimer();
 
-  protected:
-    FrameBuffer *m_frameBuffer;
-    ConnectionThread *m_peerThread;
+  private:
+    struct debugOptions_t m_debugOptions;
+    int m_canSocket;
+    bool m_canfd;
+    Timer m_timer;
+
+    struct sockaddr_can m_localAddr;
+    std::string m_canInterfaceName;
+
+    /* Performance Counters */
+    uint64_t m_rxCount;
+    uint64_t m_txCount;
 };
 
 }

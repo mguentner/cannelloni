@@ -1,5 +1,5 @@
 /*
- * This file is part of cannelloni, a SocketCAN over ethernet tunnel.
+ * This file is part of cannelloni, a SocketCAN over Ethernet tunnel.
  *
  * Copyright (C) 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
  *
@@ -20,36 +20,36 @@
 
 #pragma once
 
-#include <linux/can/raw.h>
 #include <stdint.h>
-
-#include "thread.h"
-#include "framebuffer.h"
+#include <sys/timerfd.h>
 
 namespace cannelloni {
 
-struct debugOptions_t {
-  uint8_t can    : 1;
-  uint8_t udp    : 1;
-  uint8_t buffer : 1;
-  uint8_t timer  : 1;
-};
+/*
+ * A simple Timer class that wraps around the
+ * timerfd API of the Linux Kernel.
+ * Once created, the timer can be adjusted.
+ * The FD returned by getFd() can then be used
+ * in select() calls
+ */
 
-class ConnectionThread : public Thread {
+class Timer {
   public:
-    ConnectionThread();
-    virtual ~ConnectionThread();
+    Timer();
+    ~Timer();
 
-    virtual void transmitFrame(canfd_frame *frame) = 0;
-    void setFrameBuffer(FrameBuffer *buffer);
-    FrameBuffer *getFrameBuffer();
+    uint64_t getValue();
 
-    void setPeerThread(ConnectionThread *thread);
-    ConnectionThread* getPeerThread();
+    /* adjusts the interval and value of the Timer */
+    void adjust(uint64_t interval, uint64_t value);
+    /* stops the timer */
+    void disable();
+    /* read # of timeouts */
+    uint64_t read();
 
-  protected:
-    FrameBuffer *m_frameBuffer;
-    ConnectionThread *m_peerThread;
+    int getFd();
+  private:
+    int m_timerfd;
 };
 
 }
