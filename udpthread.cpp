@@ -41,7 +41,7 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
                      const struct sockaddr_in &localAddr,
                      bool sort)
   : ConnectionThread()
-  , m_udpSocket(0)
+  , m_socket(0)
   , m_sequenceNumber(0)
   , m_timeout(100)
   , m_rxCount(0)
@@ -55,12 +55,12 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
 
 int UDPThread::start() {
   /* Setup our connection */
-  m_udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
-  if (m_udpSocket < 0) {
+  m_socket = socket(AF_INET, SOCK_DGRAM, 0);
+  if (m_socket < 0) {
     lerror << "socket Error" << std::endl;
     return -1;
   }
-  if (bind(m_udpSocket, (struct sockaddr *)&m_localAddr, sizeof(m_localAddr)) < 0) {
+  if (bind(m_socket, (struct sockaddr *)&m_localAddr, sizeof(m_localAddr)) < 0) {
     lerror << "Could not bind to address" << std::endl;
     return -1;
   }
@@ -73,13 +73,93 @@ void UDPThread::stop() {
   fireTimer();
 }
 
+bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &clientAddr) {
+  bool error = false;
+  char clientAddrStr[INET_ADDRSTRLEN];
+
+  if (inet_ntop(AF_INET, &clientAddr.sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL) {
+    lwarn << "Could not convert client address" << std::endl;
+    return false;
+  } else {
+    if (memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
+      lwarn << "Received a packet from " << clientAddrStr
+            << ", which is not set as a remote." << std::endl;
+    } else {
+      struct CannelloniDataPacket *data;
+      /* Check for OP Code */
+      data = (struct CannelloniDataPacket*) buffer;
+      if (data->version != CANNELLONI_FRAME_VERSION) {
+        lwarn << "Received wrong version" << std::endl;
+        error = true;
+      }
+      if (data->op_code != DATA) {
+        lwarn << "Received wrong OP code" << std::endl;
+        error = true;
+      }
+      if (ntohs(data->count) == 0) {
+        linfo << "Received empty packet" << std::endl;
+        error = true;
+      }
+      if (!error) {
+        uint8_t *rawData = buffer+CANNELLONI_DATA_PACKET_BASE_SIZE;
+        if (m_debugOptions.udp) {
+          linfo << "Received " << std::dec << len << " Bytes from Host " << clientAddrStr
+            << ":" << ntohs(clientAddr.sin_port) << std::endl;
+        }
+        m_rxCount++;
+        for (uint16_t i=0; i<ntohs(data->count); i++) {
+          if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > len) {
+            lerror << "Received incomplete packet" << std::endl;
+            error = true;
+            break;
+          }
+          /* We got at least a complete canfd_frame header */
+          canfd_frame *frame = m_peerThread->getFrameBuffer()->requestFrame();
+          if (!frame) {
+            lerror << "Allocation error." << std::endl;
+            error = true;
+            break;
+          }
+          frame->can_id = ntohl(*((canid_t*)rawData));
+          /* += 4 */
+          rawData += sizeof(canid_t);
+          frame->len = *rawData;
+          /* += 1 */
+          rawData += sizeof(frame->len);
+          /* If this is a CAN FD frame, also retrieve the flags */
+          if (frame->len & CANFD_FRAME) {
+            frame->flags = *rawData;
+            /* += 1 */
+            rawData += sizeof(frame->flags);
+          }
+          /* RTR Frames have no data section although they have a dlc */
+          if ((frame->can_id & CAN_RTR_FLAG) == 0) {
+            /* Check again now that we know the dlc */
+            if (rawData-buffer+canfd_len(frame) > len) {
+              lerror << "Received incomplete packet / can header corrupt!" << std::endl;
+              error = true;
+              break;
+            }
+            memcpy(frame->data, rawData, canfd_len(frame));
+            rawData += canfd_len(frame);
+          }
+          m_peerThread->transmitFrame(frame);
+          if (m_debugOptions.can) {
+            printCANInfo(frame);
+          }
+        }
+      }
+    }
+  }
+  return !error;
+}
+
 void UDPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
   uint8_t buffer[RECEIVE_BUFFER_SIZE];
   struct sockaddr_in clientAddr;
   socklen_t clientAddrLen = sizeof(struct sockaddr_in);
-  char clientAddrStr[INET_ADDRSTRLEN];
 
   /* Set interval to m_timeout and an immediate timeout */
   m_timer.adjust(m_timeout, 1);
@@ -88,9 +168,9 @@ void UDPThread::run() {
   while (m_started) {
     /* Prepare readfds */
     FD_ZERO(&readfds);
-    FD_SET(m_udpSocket, &readfds);
+    FD_SET(m_socket, &readfds);
     FD_SET(m_timer.getFd(), &readfds);
-    int ret = select(std::max(m_udpSocket,m_timer.getFd())+1, &readfds, NULL, NULL, NULL);
+    int ret = select(std::max(m_socket,m_timer.getFd())+1, &readfds, NULL, NULL, NULL);
     if (ret < 0) {
       lerror << "select error" << std::endl;
       break;
@@ -98,93 +178,19 @@ void UDPThread::run() {
     if (FD_ISSET(m_timer.getFd(), &readfds)) {
       if (m_timer.read() > 0) {
         if (m_frameBuffer->getFrameBufferSize())
-          transmitBuffer();
+          prepareBuffer();
       }
     }
-    if (FD_ISSET(m_udpSocket, &readfds)) {
+    if (FD_ISSET(m_socket, &readfds)) {
       /* Clear buffer */
       memset(buffer, 0, RECEIVE_BUFFER_SIZE);
-      receivedBytes = recvfrom(m_udpSocket, buffer, RECEIVE_BUFFER_SIZE,
+      receivedBytes = recvfrom(m_socket, buffer, RECEIVE_BUFFER_SIZE,
           0, (struct sockaddr *) &clientAddr, &clientAddrLen);
       if (receivedBytes < 0) {
         lerror << "recvfrom error." << std::endl;
-        return;
+        continue;
       } else if (receivedBytes > 0) {
-        if (inet_ntop(AF_INET, &clientAddr.sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL) {
-          lwarn << "Could not convert client address" << std::endl;
-        } else {
-            if (memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
-              lwarn << "Received a packet from " << clientAddrStr
-                    << ", which is not set as a remote." << std::endl;
-            } else {
-              bool drop = false;
-              struct UDPDataPacket *data;
-              /* Check for OP Code */
-              data = (struct UDPDataPacket*) buffer;
-              if (data->version != CANNELLONI_FRAME_VERSION) {
-                lwarn << "Received wrong version" << std::endl;
-                drop = true;
-              }
-              if (data->op_code != DATA) {
-                lwarn << "Received wrong OP code" << std::endl;
-                drop = true;
-              }
-              if (ntohs(data->count) == 0) {
-                linfo << "Received empty packet" << std::endl;
-                drop = true;
-              }
-              if (!drop) {
-                uint8_t *rawData = buffer+UDP_DATA_PACKET_BASE_SIZE;
-                bool error;
-                if (m_debugOptions.udp) {
-                  linfo << "Received " << std::dec << receivedBytes << " Bytes from Host " << clientAddrStr
-                    << ":" << ntohs(clientAddr.sin_port) << std::endl;
-                }
-                m_rxCount++;
-                for (uint16_t i=0; i<ntohs(data->count); i++) {
-                  if (rawData-buffer+CANNELLONI_FRAME_BASE_SIZE > receivedBytes) {
-                    lerror << "Received incomplete packet" << std::endl;
-                    error = true;
-                    break;
-                  }
-                  /* We got at least a complete canfd_frame header */
-                  canfd_frame *frame = m_peerThread->getFrameBuffer()->requestFrame();
-                  if (!frame) {
-                    lerror << "Allocation error." << std::endl;
-                    error = true;
-                    break;
-                  }
-                  frame->can_id = ntohl(*((canid_t*)rawData));
-                  /* += 4 */
-                  rawData += sizeof(canid_t);
-                  frame->len = *rawData;
-                  /* += 1 */
-                  rawData += sizeof(frame->len);
-                  /* If this is a CAN FD frame, also retrieve the flags */
-                  if (frame->len & CANFD_FRAME) {
-                    frame->flags = *rawData;
-                    /* += 1 */
-                    rawData += sizeof(frame->flags);
-                  }
-                  /* RTR Frames have no data section although they have a dlc */
-                  if ((frame->can_id & CAN_RTR_FLAG) == 0) {
-                    /* Check again now that we know the dlc */
-                    if (rawData-buffer+canfd_len(frame) > receivedBytes) {
-                      lerror << "Received incomplete packet / can header corrupt!" << std::endl;
-                      error = true;
-                      break;
-                    }
-                    memcpy(frame->data, rawData, canfd_len(frame));
-                    rawData += canfd_len(frame);
-                  }
-                  m_peerThread->transmitFrame(frame);
-                  if (m_debugOptions.can) {
-                    printCANInfo(frame);
-                  }
-                }
-              }
-            }
-        }
+        parsePacket(buffer, receivedBytes, clientAddr);
       }
     }
   }
@@ -194,13 +200,13 @@ void UDPThread::run() {
   /* free all entries in m_framePool */
   m_frameBuffer->clearPool();
   linfo << "Shutting down. UDP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
-  shutdown(m_udpSocket, SHUT_RDWR);
-  close(m_udpSocket);
+  shutdown(m_socket, SHUT_RDWR);
+  close(m_socket);
 }
 
 void UDPThread::transmitFrame(canfd_frame *frame) {
   m_frameBuffer->insertFrame(frame);
-  if( m_frameBuffer->getFrameBufferSize() + UDP_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
+  if( m_frameBuffer->getFrameBufferSize() + CANNELLONI_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
     fireTimer();
   } else {
     /* Check whether we have custom timeout for this frame */
@@ -244,12 +250,12 @@ std::map<uint32_t,uint32_t>& UDPThread::getTimeoutTable() {
   return m_timeoutTable;
 }
 
-void UDPThread::transmitBuffer() {
+void UDPThread::prepareBuffer() {
   uint8_t *packetBuffer = new uint8_t[UDP_PAYLOAD_SIZE];
   uint8_t *data;
   ssize_t transmittedBytes = 0;
   uint16_t frameCount = 0;
-  struct UDPDataPacket *dataPacket;
+  struct CannelloniDataPacket *dataPacket;
   struct timeval currentTime;
 
   m_frameBuffer->swapBuffers();
@@ -258,7 +264,7 @@ void UDPThread::transmitBuffer() {
 
   const std::list<canfd_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
 
-  data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
+  data = packetBuffer+CANNELLONI_DATA_PACKET_BASE_SIZE;
   for (auto it = buffer->begin(); it != buffer->end(); it++) {
     canfd_frame *frame = *it;
     /* Check for packet overflow */
@@ -266,19 +272,18 @@ void UDPThread::transmitBuffer() {
           +CANNELLONI_FRAME_BASE_SIZE
           +canfd_len(frame)
           +((frame->len & CANFD_FRAME)?sizeof(frame->flags):0)) > UDP_PAYLOAD_SIZE) {
-      dataPacket = (struct UDPDataPacket*) packetBuffer;
+      dataPacket = (struct CannelloniDataPacket*) packetBuffer;
       dataPacket->version = CANNELLONI_FRAME_VERSION;
       dataPacket->op_code = DATA;
       dataPacket->seq_no = m_sequenceNumber++;
       dataPacket->count = htons(frameCount);
-      transmittedBytes = sendto(m_udpSocket, packetBuffer, data-packetBuffer, 0,
-            (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
+      transmittedBytes = sendBuffer(packetBuffer, data-packetBuffer);
       if (transmittedBytes != data-packetBuffer) {
         lerror << "UDP Socket error. Error while transmitting" << std::endl;
       } else {
         m_txCount++;
       }
-      data = packetBuffer+UDP_DATA_PACKET_BASE_SIZE;
+      data = packetBuffer+CANNELLONI_DATA_PACKET_BASE_SIZE;
       frameCount = 0;
     }
     *((canid_t *) (data)) = htonl(frame->can_id);
@@ -299,13 +304,12 @@ void UDPThread::transmitBuffer() {
     }
     frameCount++;
   }
-  dataPacket = (struct UDPDataPacket*) packetBuffer;
+  dataPacket = (struct CannelloniDataPacket*) packetBuffer;
   dataPacket->version = CANNELLONI_FRAME_VERSION;
   dataPacket->op_code = DATA;
   dataPacket->seq_no = m_sequenceNumber++;
   dataPacket->count = htons(frameCount);
-  transmittedBytes = sendto(m_udpSocket, packetBuffer, data-packetBuffer, 0,
-        (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
+  transmittedBytes = sendBuffer(packetBuffer, data-packetBuffer);
   if (transmittedBytes != data-packetBuffer) {
     lerror << "UDP Socket error. Error while transmitting" << std::endl;
   } else {
@@ -315,6 +319,12 @@ void UDPThread::transmitBuffer() {
   m_frameBuffer->mergeIntermediateBuffer();
   delete[] packetBuffer;
 }
+
+ssize_t UDPThread::sendBuffer(uint8_t *buffer, uint16_t len) {
+  return sendto(m_socket, buffer, len, 0,
+               (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
+}
+
 
 void UDPThread::fireTimer() {
   /* Instant expiry (so 1us) */

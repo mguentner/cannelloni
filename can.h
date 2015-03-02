@@ -28,14 +28,14 @@ namespace cannelloni {
 /* Base size of a canfd_frame (canid + dlc) */
 #define CANNELLONI_FRAME_BASE_SIZE 5
 /* Size in byte of UDPDataPacket */
-#define UDP_DATA_PACKET_BASE_SIZE 5
+#define CANNELLONI_DATA_PACKET_BASE_SIZE 5
 
 #define CANNELLONI_FRAME_VERSION 2
 #define CANFD_FRAME              0x80
 
 enum op_codes {DATA, ACK, NACK};
 
-struct __attribute__((__packed__)) UDPDataPacket {
+struct __attribute__((__packed__)) CannelloniDataPacket {
   /* Version */
   uint8_t version;
   /* OP Code */
@@ -44,16 +44,6 @@ struct __attribute__((__packed__)) UDPDataPacket {
   uint8_t seq_no;
   /* Number of CAN Messages in this packet */
   uint16_t count;
-};
-
-/* This packet serves for both ACK and NACK */
-struct __attribute__((__packed__)) UDPACKPacket {
-  /* Version */
-  uint8_t version;
-  /* OP Code */
-  uint8_t op_code;
-  /* Sequence Number */
-  uint8_t seq_no;
 };
 
 /*

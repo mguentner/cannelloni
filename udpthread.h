@@ -44,6 +44,7 @@ class UDPThread : public ConnectionThread {
     virtual int start();
     virtual void stop();
     virtual void run();
+    bool parsePacket(uint8_t *buf, uint16_t len, struct sockaddr_in &clientAddr);
     virtual void transmitFrame(canfd_frame *frame);
 
     void setTimeout(uint32_t timeout);
@@ -52,15 +53,16 @@ class UDPThread : public ConnectionThread {
     void setTimeoutTable(std::map<uint32_t,uint32_t> &timeoutTable);
     std::map<uint32_t,uint32_t>& getTimeoutTable();
 
-  private:
-    /* This function transmits m_frameBuffer */
-    void transmitBuffer();
+  protected:
+    void prepareBuffer();
+    virtual ssize_t sendBuffer(uint8_t *buffer, uint16_t len);
+
     void fireTimer();
 
-  private:
+  protected:
     struct debugOptions_t m_debugOptions;
     bool m_sort;
-    int m_udpSocket;
+    int m_socket;
     Timer m_timer;
 
     struct sockaddr_in m_localAddr;
