@@ -39,7 +39,8 @@
 UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
                      const struct sockaddr_in &remoteAddr,
                      const struct sockaddr_in &localAddr,
-                     bool sort)
+                     bool sort,
+                     bool checkPeer)
   : ConnectionThread()
   , m_socket(0)
   , m_sequenceNumber(0)
@@ -47,6 +48,8 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
   , m_rxCount(0)
   , m_txCount(0)
   , m_sort(sort)
+  , m_checkPeer(checkPeer)
+  , m_payloadSize(UDP_PAYLOAD_SIZE)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
   memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_in));
@@ -81,7 +84,7 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &c
     lwarn << "Could not convert client address" << std::endl;
     return false;
   } else {
-    if (memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
+    if ((memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) && m_checkPeer) {
       lwarn << "Received a packet from " << clientAddrStr
             << ", which is not set as a remote." << std::endl;
     } else {
@@ -206,7 +209,7 @@ void UDPThread::run() {
 
 void UDPThread::transmitFrame(canfd_frame *frame) {
   m_frameBuffer->insertFrame(frame);
-  if( m_frameBuffer->getFrameBufferSize() + CANNELLONI_DATA_PACKET_BASE_SIZE >= UDP_PAYLOAD_SIZE) {
+  if( m_frameBuffer->getFrameBufferSize() + CANNELLONI_DATA_PACKET_BASE_SIZE >= m_payloadSize) {
     fireTimer();
   } else {
     /* Check whether we have custom timeout for this frame */
@@ -251,7 +254,7 @@ std::map<uint32_t,uint32_t>& UDPThread::getTimeoutTable() {
 }
 
 void UDPThread::prepareBuffer() {
-  uint8_t *packetBuffer = new uint8_t[UDP_PAYLOAD_SIZE];
+  uint8_t *packetBuffer = new uint8_t[m_payloadSize];
   uint8_t *data;
   ssize_t transmittedBytes = 0;
   uint16_t frameCount = 0;
@@ -271,7 +274,7 @@ void UDPThread::prepareBuffer() {
     if ((data-packetBuffer
           +CANNELLONI_FRAME_BASE_SIZE
           +canfd_len(frame)
-          +((frame->len & CANFD_FRAME)?sizeof(frame->flags):0)) > UDP_PAYLOAD_SIZE) {
+          +((frame->len & CANFD_FRAME)?sizeof(frame->flags):0)) > m_payloadSize) {
       dataPacket = (struct CannelloniDataPacket*) packetBuffer;
       dataPacket->version = CANNELLONI_FRAME_VERSION;
       dataPacket->op_code = DATA;

@@ -99,6 +99,9 @@ class FrameBuffer {
 
     void debug();
 
+    /* Moves all frames back into m_framePool and sets the size to 0 */
+    void reset();
+
     void clearPool();
 
     size_t getFrameBufferSize();

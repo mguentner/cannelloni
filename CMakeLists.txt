@@ -12,8 +12,9 @@ add_library(addsources STATIC
             thread.cpp
             timer.cpp
             udpthread.cpp
-            canthread.cpp)
+            canthread.cpp
+            sctpthread.cpp)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(cannelloni addsources pthread)
+target_link_libraries(cannelloni addsources pthread sctp)
 
 install(TARGETS cannelloni DESTINATION bin)

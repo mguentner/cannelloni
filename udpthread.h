@@ -31,15 +31,20 @@
 
 namespace cannelloni {
 
-#define RECEIVE_BUFFER_SIZE 1500
-#define UDP_PAYLOAD_SIZE 1472
+#define ETHERNET_MTU 1500
+#define IP_HEADER_SIZE 20
+#define UDP_HEADER_SIZE 8
+
+#define RECEIVE_BUFFER_SIZE ETHERNET_MTU
+#define UDP_PAYLOAD_SIZE ETHERNET_MTU-IP_HEADER_SIZE-UDP_HEADER_SIZE
 
 class UDPThread : public ConnectionThread {
   public:
     UDPThread(const struct debugOptions_t &debugOptions,
               const struct sockaddr_in &remoteAddr,
               const struct sockaddr_in &localAddr,
-              bool sort);
+              bool sort,
+              bool checkPeer);
 
     virtual int start();
     virtual void stop();
@@ -62,6 +67,7 @@ class UDPThread : public ConnectionThread {
   protected:
     struct debugOptions_t m_debugOptions;
     bool m_sort;
+    bool m_checkPeer;
     int m_socket;
     Timer m_timer;
 
@@ -75,6 +81,8 @@ class UDPThread : public ConnectionThread {
     /* Performance Counters */
     uint64_t m_rxCount;
     uint64_t m_txCount;
+
+    uint32_t m_payloadSize;
 };
 
 }

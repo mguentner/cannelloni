@@ -162,8 +162,26 @@ void FrameBuffer::debug() {
   linfo << "intermediateBuffer: " << m_intermediateBuffer->size() << std::endl;
 }
 
+void FrameBuffer::reset() {
+  std::unique_lock<std::recursive_mutex> lock1(m_poolMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> lock2(m_bufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> lock3(m_intermediateBufferMutex, std::defer_lock);
+  std::lock(lock1, lock2, lock3);
+
+  /* Splice everything back into the pool */
+  m_framePool.splice(m_framePool.end(), *m_intermediateBuffer);
+  m_framePool.splice(m_framePool.end(), *m_buffer);
+
+  m_intermediateBufferSize = 0;
+  m_bufferSize = 0;
+}
+
 void FrameBuffer::clearPool() {
-  std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
+  std::unique_lock<std::recursive_mutex> lock1(m_poolMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> lock2(m_bufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> lock3(m_intermediateBufferMutex, std::defer_lock);
+  std::lock(lock1, lock2, lock3);
+
   for (canfd_frame *f : m_framePool) {
     delete f;
   }

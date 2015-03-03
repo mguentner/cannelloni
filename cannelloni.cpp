@@ -33,6 +33,7 @@
 #include <sys/signalfd.h>
 
 #include "udpthread.h"
+#include "sctpthread.h"
 #include "canthread.h"
 #include "framebuffer.h"
 #include "logging.h"
@@ -46,6 +47,9 @@ void printUsage() {
   std::cout << "cannelloni " << CANNELLONI_VERSION << std::endl;
   std::cout << "Usage: cannelloni OPTIONS" << std::endl;
   std::cout << "Available options:" << std::endl;
+  std::cout << "\t -S ROLE \t\t enable SCTP transport." << std::endl;
+  std::cout << "\t\t\t c : act as client" << std::endl;
+  std::cout << "\t\t\t s : act as server" << std::endl;
   std::cout << "\t -l PORT \t\t listening port, default: 20000" << std::endl;
   std::cout << "\t -L IP   \t\t listening IP, default: 0.0.0.0" << std::endl;
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
@@ -55,7 +59,7 @@ void printUsage() {
   std::cout << "\t -s           \t\t disable frame sorting" << std::endl;
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
-  std::cout << "\t\t\t u : enable debugging of udp frames" << std::endl;
+  std::cout << "\t\t\t u : enable debugging of udp/sctp frames" << std::endl;
   std::cout << "\t\t\t b : enable debugging of internal buffer structures" << std::endl;
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
@@ -67,6 +71,8 @@ int main(int argc, char** argv) {
   int opt;
   bool remoteIPSupplied = false;
   bool sortUDP = true;
+  bool useSCTP = false;
+  SCTPThreadRole sctpRole = CLIENT;
   char remoteIP[INET_ADDRSTRLEN] = "127.0.0.1";
   uint16_t remotePort = 20000;
   char localIP[INET_ADDRSTRLEN] = "0.0.0.0";
@@ -79,8 +85,26 @@ int main(int argc, char** argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  while ((opt = getopt(argc, argv, "l:L:r:R:I:t:T:d:hs")) != -1) {
+  while ((opt = getopt(argc, argv, "S:l:L:r:R:I:t:T:d:hs")) != -1) {
     switch(opt) {
+      case 'S':
+        switch (optarg[0]) {
+          case 's':
+          case 'S':
+            sctpRole = SERVER;
+            useSCTP = true;
+            break;
+          case 'c':
+          case 'C':
+            sctpRole = CLIENT;
+            useSCTP = true;
+            break;
+          default:
+            std::cout << "-S only accepts [s]erver or [c]lient" << std::endl;
+            printUsage();
+            return -1;
+        }
+        break;
       case 'l':
         localPort = strtoul(optarg, NULL, 10);
         break;
@@ -124,7 +148,7 @@ int main(int argc, char** argv) {
         return -1;
     }
   }
-  if (!remoteIPSupplied) {
+  if (!remoteIPSupplied && !(useSCTP && sctpRole == SERVER)) {
     std::cout << "Error: Remote IP not supplied" << std::endl;
     printUsage();
     return -1;
@@ -154,7 +178,8 @@ int main(int argc, char** argv) {
 
   if (debugOptions.timer) {
     if (timeoutTable.empty()) {
-      linfo << "No custom timeout table specified, using " << bufferTimeout << " us for all frames." << std::endl;
+      linfo << "No custom timeout table specified, using "
+            << bufferTimeout << " us for all frames." << std::endl;
     } else {
       linfo << "Custom timeout table loaded: " << std::endl;
       linfo << "*---------------------*" << std::endl;
@@ -202,17 +227,23 @@ int main(int argc, char** argv) {
   localAddr.sin_port = htons(localPort);
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
-  UDPThread *udpThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP);
+  UDPThread *netThread;
+  if (useSCTP) {
+    dynamic_cast<SCTPThread*>(netThread);
+    netThread = new SCTPThread(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
+  } else {
+    netThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP, true);
+  }
   CANThread *canThread = new CANThread(debugOptions, canInterface);
-  FrameBuffer *udpFrameBuffer = new FrameBuffer(1000,16000);
+  FrameBuffer *netFrameBuffer = new FrameBuffer(1000,16000);
   FrameBuffer *canFrameBuffer = new FrameBuffer(1000,16000);
-  udpThread->setPeerThread(canThread);
-  udpThread->setFrameBuffer(udpFrameBuffer);
-  udpThread->setTimeoutTable(timeoutTable);
-  canThread->setPeerThread(udpThread);
+  netThread->setPeerThread(canThread);
+  netThread->setFrameBuffer(netFrameBuffer);
+  netThread->setTimeoutTable(timeoutTable);
+  canThread->setPeerThread(netThread);
   canThread->setFrameBuffer(canFrameBuffer);
-  udpThread->setTimeout(bufferTimeout);
-  udpThread->start();
+  netThread->setTimeout(bufferTimeout);
+  netThread->start();
   canThread->start();
   while (1) {
     ssize_t receivedBytes = read(signalFD, &signalFdInfo, sizeof(struct signalfd_siginfo));
@@ -227,13 +258,13 @@ int main(int argc, char** argv) {
     }
   }
 
-  udpThread->stop();
-  udpThread->join();
+  netThread->stop();
+  netThread->join();
   canThread->stop();
   canThread->join();
 
-  delete udpThread;
-  delete udpFrameBuffer;
+  delete netThread;
+  delete netFrameBuffer;
   delete canThread;
   delete canFrameBuffer;
   close(signalFD);
