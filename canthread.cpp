@@ -186,9 +186,14 @@ void CANThread::transmitBuffer() {
       break;
     /* Check whether we are operating on a CAN FD socket */
     if (m_canfd) {
-      /* Clear the CANFD_FRAME bit in len */
-      frame->len &= ~(CANFD_FRAME);
-      transmittedBytes = write(m_canSocket, frame, CANFD_MTU);
+      if (frame->len & CANFD_FRAME) {
+        /* Clear the CANFD_FRAME bit in len */
+        frame->len &= ~(CANFD_FRAME);
+        transmittedBytes = write(m_canSocket, frame, CANFD_MTU);
+      } else {
+        frame->len &= ~(CANFD_FRAME);
+        transmittedBytes = write(m_canSocket, frame, CAN_MTU);
+      }
     } else {
       /* First check the length of the frame */
       if (frame->len & CANFD_FRAME) {
