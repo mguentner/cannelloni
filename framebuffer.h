@@ -56,10 +56,13 @@ class FrameBuffer {
     FrameBuffer(size_t size, size_t max);
     /* Locks m_poolMutex and takes a free frame from m_framePool,
      * will grow the buffer if no frame is available
-     * will return NULL if no memory is available
+     *
+     * will return NULL if no memory is available and overwriteLast is false
+     * will return the last frame in the buffer when overwriteLast is true
+     *
      */
     ~FrameBuffer();
-    canfd_frame* requestFrame();
+    canfd_frame* requestFrame(bool overwriteLast, bool debug = false);
 
     /* If a read fails we need to give the frame back */
     void insertFramePool(canfd_frame *frame);
@@ -77,6 +80,8 @@ class FrameBuffer {
      * the producer (see Design Notes)
      */
     canfd_frame* requestBufferFront();
+
+    canfd_frame* requestBufferBack();
 
     /* Swaps m_Buffer with m_intermediateBuffer */
     void swapBuffers();
@@ -107,7 +112,7 @@ class FrameBuffer {
     size_t getFrameBufferSize();
 
   private:
-    bool resizePool(std::size_t size);
+    bool resizePool(std::size_t size, bool debug = false);
 
   private:
     std::list<canfd_frame*> m_framePool;

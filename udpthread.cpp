@@ -117,7 +117,7 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &c
             break;
           }
           /* We got at least a complete canfd_frame header */
-          canfd_frame *frame = m_peerThread->getFrameBuffer()->requestFrame();
+          canfd_frame *frame = m_peerThread->getFrameBuffer()->requestFrame(true, m_debugOptions.buffer);
           if (!frame) {
             lerror << "Allocation error." << std::endl;
             error = true;

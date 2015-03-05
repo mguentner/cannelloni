@@ -128,7 +128,7 @@ void CANThread::run() {
     }
     if (FD_ISSET(m_canSocket, &readfds)) {
       /* Request frame from frameBuffer */
-      struct canfd_frame *frame = m_peerThread->getFrameBuffer()->requestFrame();
+      struct canfd_frame *frame = m_peerThread->getFrameBuffer()->requestFrame(true, m_debugOptions.buffer);
       if (frame == NULL) {
         continue;
       }
