@@ -263,6 +263,10 @@ int main(int argc, char** argv) {
   canThread->stop();
   canThread->join();
 
+  /* Clear/free pools once all threads are joined */
+  netFrameBuffer->clearPool();
+  canFrameBuffer->clearPool();
+
   delete netThread;
   delete netFrameBuffer;
   delete canThread;

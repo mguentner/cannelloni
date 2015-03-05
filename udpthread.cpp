@@ -200,8 +200,6 @@ void UDPThread::run() {
   if (m_debugOptions.buffer) {
     m_frameBuffer->debug();
   }
-  /* free all entries in m_framePool */
-  m_frameBuffer->clearPool();
   linfo << "Shutting down. UDP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
   shutdown(m_socket, SHUT_RDWR);
   close(m_socket);
