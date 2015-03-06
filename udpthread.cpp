@@ -207,7 +207,12 @@ void UDPThread::run() {
 
 void UDPThread::transmitFrame(canfd_frame *frame) {
   m_frameBuffer->insertFrame(frame);
-  if( m_frameBuffer->getFrameBufferSize() + CANNELLONI_DATA_PACKET_BASE_SIZE >= m_payloadSize) {
+  /*
+   * We want that at least this frame and next frame fits into
+   * the packet. The minimum size is * CANNELLONI_DATA_PACKET_BASE_SIZE,
+   * which is just the ID * plus the DLC
+   */
+  if( m_frameBuffer->getFrameBufferSize() + 2*CANNELLONI_DATA_PACKET_BASE_SIZE >= m_payloadSize) {
     fireTimer();
   } else {
     /* Check whether we have custom timeout for this frame */
@@ -263,7 +268,7 @@ void UDPThread::prepareBuffer() {
   if (m_sort)
     m_frameBuffer->sortIntermediateBuffer();
 
-  const std::list<canfd_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
+  std::list<canfd_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
 
   data = packetBuffer+CANNELLONI_DATA_PACKET_BASE_SIZE;
   for (auto it = buffer->begin(); it != buffer->end(); it++) {
@@ -273,19 +278,9 @@ void UDPThread::prepareBuffer() {
           +CANNELLONI_FRAME_BASE_SIZE
           +canfd_len(frame)
           +((frame->len & CANFD_FRAME)?sizeof(frame->flags):0)) > m_payloadSize) {
-      dataPacket = (struct CannelloniDataPacket*) packetBuffer;
-      dataPacket->version = CANNELLONI_FRAME_VERSION;
-      dataPacket->op_code = DATA;
-      dataPacket->seq_no = m_sequenceNumber++;
-      dataPacket->count = htons(frameCount);
-      transmittedBytes = sendBuffer(packetBuffer, data-packetBuffer);
-      if (transmittedBytes != data-packetBuffer) {
-        lerror << "UDP Socket error. Error while transmitting" << std::endl;
-      } else {
-        m_txCount++;
-      }
-      data = packetBuffer+CANNELLONI_DATA_PACKET_BASE_SIZE;
-      frameCount = 0;
+      /* Move all remaining frames back to m_buffer */
+      m_frameBuffer->returnIntermediateBuffer(it);
+      break;
     }
     *((canid_t *) (data)) = htonl(frame->can_id);
     /* += 4 */

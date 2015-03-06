@@ -92,13 +92,15 @@ class FrameBuffer {
     /* merges m_intermediateBuffer back into m_poolMutex */
     void mergeIntermediateBuffer();
 
+    /* merges parts of m_intermediateBuffer back into m_buffer */
+    void returnIntermediateBuffer(std::list<canfd_frame*>::iterator start);
 
     /* This will return a pointer to the current intermediateBuffer.
      * Once the operation is done the caller MUST call
      * unlockIntermediateBuffer to unlock the mutex in order to
      * prevent a deadlock!
      */
-    const std::list<canfd_frame*>* getIntermediateBuffer();
+    std::list<canfd_frame*>* getIntermediateBuffer();
 
     void unlockIntermediateBuffer();
 

@@ -169,12 +169,25 @@ void FrameBuffer::mergeIntermediateBuffer() {
   std::unique_lock<std::recursive_mutex> lock2(m_intermediateBufferMutex, std::defer_lock);
   std::lock(lock1, lock2);
 
-  m_framePool.merge(*m_intermediateBuffer);
+  m_framePool.splice(m_framePool.end(), *m_intermediateBuffer);
   m_intermediateBufferSize = 0;
 }
 
+void FrameBuffer::returnIntermediateBuffer(std::list<canfd_frame*>::iterator start) {
+  std::unique_lock<std::recursive_mutex> lock1(m_intermediateBufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> lock2(m_bufferMutex, std::defer_lock);
+  std::lock(lock1,lock2);
 
-const std::list<canfd_frame*>* FrameBuffer::getIntermediateBuffer() {
+  /* Don't splice since we need to keep track of the size */
+  for (std::list<canfd_frame*>::iterator it = start;
+                                         it != m_intermediateBuffer->end();) {
+    canfd_frame *frame = *it;
+    it = m_intermediateBuffer->erase(it);
+    returnFrame(frame);
+  }
+}
+
+std::list<canfd_frame*>* FrameBuffer::getIntermediateBuffer() {
   /* We need to lock m_intermediateBuffer here */
   m_intermediateBufferMutex.lock();
   return m_intermediateBuffer;
