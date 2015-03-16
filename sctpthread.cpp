@@ -19,6 +19,7 @@
  */
 
 #include <chrono>
+#include <algorithm>
 
 #include <string.h>
 
@@ -88,8 +89,10 @@ void SCTPThread::run() {
   struct sockaddr_in clientAddr;
   socklen_t clientAddrLen = sizeof(struct sockaddr_in);
 
-  /* Set interval to m_timeout and an immediate timeout */
-  m_timer.adjust(m_timeout, 1);
+  /* Set interval to m_timeout */
+  m_transmitTimer.adjust(m_timeout, m_timeout);
+  m_blockTimer.adjust(SELECT_TIMEOUT, SELECT_TIMEOUT);
+
   if (m_role == SERVER) {
     /* Mark this m_socket as passive*/
     listen(m_serverSocket, 1);
@@ -179,8 +182,10 @@ void SCTPThread::run() {
       /* Prepare readfds */
       FD_ZERO(&readfds);
       FD_SET(m_socket, &readfds);
-      FD_SET(m_timer.getFd(), &readfds);
-      int ret = select(std::max(m_socket, m_timer.getFd())+1, &readfds, NULL, NULL, NULL);
+      FD_SET(m_transmitTimer.getFd(), &readfds);
+      FD_SET(m_blockTimer.getFd(), &readfds);
+      int ret = select(std::max({m_socket, m_transmitTimer.getFd(), m_blockTimer.getFd()})+1,
+        &readfds, NULL, NULL, NULL);
       if (ret < 0) {
         if (errno == EOF) {
           m_connected = false;
@@ -190,11 +195,16 @@ void SCTPThread::run() {
         lerror << "select error" << std::endl;
         continue;
       }
-      if (FD_ISSET(m_timer.getFd(), &readfds)) {
-        if (m_timer.read() > 0) {
+      if (FD_ISSET(m_transmitTimer.getFd(), &readfds)) {
+        if (m_transmitTimer.read() > 0) {
           if (m_frameBuffer->getFrameBufferSize())
             prepareBuffer();
+          else
+            m_transmitTimer.disable();
         }
+      }
+      if (FD_ISSET(m_blockTimer.getFd(), &readfds)) {
+        m_blockTimer.read();
       }
       if (FD_ISSET(m_socket, &readfds)) {
         struct sctp_sndrcvinfo sinfo;

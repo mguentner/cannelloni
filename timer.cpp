@@ -74,3 +74,31 @@ int Timer::getFd() {
   return m_timerfd;
 }
 
+void Timer::disable() {
+  struct itimerspec ts;
+  timerfd_gettime(m_timerfd, &ts);
+  ts.it_value.tv_sec = 0;
+  ts.it_value.tv_nsec = 0;
+  timerfd_settime(m_timerfd, 0, &ts, NULL);
+}
+
+void Timer::enable() {
+  struct itimerspec ts;
+  timerfd_gettime(m_timerfd, &ts);
+  ts.it_value.tv_sec = ts.it_interval.tv_sec;
+  ts.it_value.tv_nsec = ts.it_interval.tv_nsec;
+  timerfd_settime(m_timerfd, 0, &ts, NULL);
+}
+
+void Timer::fire() {
+  struct itimerspec ts;
+  timerfd_gettime(m_timerfd, &ts);
+  adjust(ts.it_interval.tv_sec*1000+ts.it_interval.tv_nsec/1000, 1);
+}
+
+bool Timer::isEnabled() {
+  if (getValue())
+    return true;
+  else
+    return false;
+}

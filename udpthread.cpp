@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
+
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -73,7 +75,7 @@ int UDPThread::start() {
 void UDPThread::stop() {
   Thread::stop();
   /* m_started is now false, we need to wake up the thread */
-  fireTimer();
+  m_blockTimer.fire();
 }
 
 bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &clientAddr) {
@@ -164,25 +166,35 @@ void UDPThread::run() {
   struct sockaddr_in clientAddr;
   socklen_t clientAddrLen = sizeof(struct sockaddr_in);
 
-  /* Set interval to m_timeout and an immediate timeout */
-  m_timer.adjust(m_timeout, 1);
+  /* Set interval to m_timeout */
+  m_transmitTimer.adjust(m_timeout, m_timeout);
+  m_blockTimer.adjust(SELECT_TIMEOUT, SELECT_TIMEOUT);
 
   linfo << "UDPThread up and running" << std::endl;
   while (m_started) {
     /* Prepare readfds */
     FD_ZERO(&readfds);
     FD_SET(m_socket, &readfds);
-    FD_SET(m_timer.getFd(), &readfds);
-    int ret = select(std::max(m_socket,m_timer.getFd())+1, &readfds, NULL, NULL, NULL);
+    FD_SET(m_transmitTimer.getFd(), &readfds);
+    FD_SET(m_blockTimer.getFd(), &readfds);
+
+    int ret = select(std::max({m_socket, m_transmitTimer.getFd(), m_blockTimer.getFd()})+1,
+                     &readfds, NULL, NULL, NULL);
     if (ret < 0) {
       lerror << "select error" << std::endl;
       break;
     }
-    if (FD_ISSET(m_timer.getFd(), &readfds)) {
-      if (m_timer.read() > 0) {
+    if (FD_ISSET(m_transmitTimer.getFd(), &readfds)) {
+      if (m_transmitTimer.read() > 0) {
         if (m_frameBuffer->getFrameBufferSize())
           prepareBuffer();
+        else {
+          m_transmitTimer.disable();
+        }
       }
+    }
+    if (FD_ISSET(m_blockTimer.getFd(), &readfds)) {
+      m_blockTimer.read();
     }
     if (FD_ISSET(m_socket, &readfds)) {
       /* Clear buffer */
@@ -207,13 +219,19 @@ void UDPThread::run() {
 
 void UDPThread::transmitFrame(canfd_frame *frame) {
   m_frameBuffer->insertFrame(frame);
+  /* If we have stopped the timer, enable it */
+  if (!m_transmitTimer.isEnabled()) {
+    m_transmitTimer.enable();
+  }
   /*
    * We want that at least this frame and next frame fits into
-   * the packet. The minimum size is * CANNELLONI_DATA_PACKET_BASE_SIZE,
+   * the packet. The minimum size is CANNELLONI_FRAME_BASE_SIZE,
    * which is just the ID * plus the DLC
    */
-  if( m_frameBuffer->getFrameBufferSize() + 2*CANNELLONI_DATA_PACKET_BASE_SIZE >= m_payloadSize) {
-    fireTimer();
+  if (m_frameBuffer->getFrameBufferSize() +
+      CANNELLONI_DATA_PACKET_BASE_SIZE +
+      CANNELLONI_FRAME_BASE_SIZE >= m_payloadSize) {
+    m_transmitTimer.fire();
   } else {
     /* Check whether we have custom timeout for this frame */
     std::map<uint32_t,uint32_t>::iterator it;
@@ -226,12 +244,12 @@ void UDPThread::transmitFrame(canfd_frame *frame) {
     if (it != m_timeoutTable.end()) {
       uint32_t timeout = it->second;
       if (timeout < m_timeout) {
-        if (timeout < m_timer.getValue()) {
+        if (timeout < m_transmitTimer.getValue()) {
           if (m_debugOptions.timer) {
             linfo << "Found timeout entry for ID " << can_id << ". Adjusting timer." << std::endl;
           }
           /* Let buffer expire in timeout ms */
-          m_timer.adjust(m_timeout, timeout);
+          m_transmitTimer.adjust(m_timeout, timeout);
         }
       }
 
@@ -320,11 +338,3 @@ ssize_t UDPThread::sendBuffer(uint8_t *buffer, uint16_t len) {
   return sendto(m_socket, buffer, len, 0,
                (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr));
 }
-
-
-void UDPThread::fireTimer() {
-  /* Instant expiry (so 1us) */
-  m_timer.adjust(m_timeout, 1);
-}
-
-

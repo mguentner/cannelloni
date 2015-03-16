@@ -35,6 +35,9 @@ namespace cannelloni {
 #define IP_HEADER_SIZE 20
 #define UDP_HEADER_SIZE 8
 
+/* Block select max. for 500ms */
+#define SELECT_TIMEOUT 500000
+
 #define RECEIVE_BUFFER_SIZE ETHERNET_MTU
 #define UDP_PAYLOAD_SIZE ETHERNET_MTU-IP_HEADER_SIZE-UDP_HEADER_SIZE
 
@@ -62,14 +65,13 @@ class UDPThread : public ConnectionThread {
     void prepareBuffer();
     virtual ssize_t sendBuffer(uint8_t *buffer, uint16_t len);
 
-    void fireTimer();
-
   protected:
     struct debugOptions_t m_debugOptions;
     bool m_sort;
     bool m_checkPeer;
     int m_socket;
-    Timer m_timer;
+    Timer m_blockTimer;
+    Timer m_transmitTimer;
 
     struct sockaddr_in m_localAddr;
     struct sockaddr_in m_remoteAddr;

@@ -42,12 +42,19 @@ class Timer {
 
     /* adjusts the interval and value of the Timer */
     void adjust(uint64_t interval, uint64_t value);
-    /* stops the timer */
-    void disable();
     /* read # of timeouts */
     uint64_t read();
 
     int getFd();
+
+    /* disable timer */
+    void disable();
+    /* enable timer */
+    void enable();
+    /* trigger an immediate timeout */
+    void fire();
+    /* returns whether the timer is enabled */
+    bool isEnabled();
   private:
     int m_timerfd;
 };
