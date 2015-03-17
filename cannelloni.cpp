@@ -56,7 +56,7 @@ void printUsage() {
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
-  std::cout << "\t -s           \t\t disable frame sorting" << std::endl;
+  std::cout << "\t -s           \t\t enable frame sorting" << std::endl;
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
   std::cout << "\t\t\t u : enable debugging of udp/sctp frames" << std::endl;
@@ -70,7 +70,7 @@ void printUsage() {
 int main(int argc, char** argv) {
   int opt;
   bool remoteIPSupplied = false;
-  bool sortUDP = true;
+  bool sortUDP = false;
   bool useSCTP = false;
   SCTPThreadRole sctpRole = CLIENT;
   char remoteIP[INET_ADDRSTRLEN] = "127.0.0.1";
@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
         printUsage();
         return 0;
       case 's':
-        sortUDP = false;
+        sortUDP = true;
         break;
       default:
         printUsage();
