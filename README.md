@@ -6,18 +6,15 @@ between two machines.
 
 Features:
 
-- frame aggregation in UDP frames (multiple CAN frames in one UDP
-  frame)
+- frame aggregation in Ethernet frames (multiple CAN frames in one
+  Ethernet frame)
 - efficient protocol
-- very high data rates possible (40 Mbit/s +)
+- very high data rates possible (10 Mbit/s +)
 - custom timeouts for certain IDs (see below)
 - easy debugging
 - CAN FD support on interfaces that support it
-
-Not yet supported (send a PR ;) ):
-
-- Resend lost UDP frames
-- Packet loss detection
+- UDP support (fast, unreliable transport)
+- SCTP support (reliable transport)
 
 ##Compilation
 
@@ -140,7 +137,58 @@ INFO:cannelloni.cpp[155]:main:Other Frames:100000 us.
 [...]
 ```
 
+#Transports
+
+##UDP
+
+cannelloni supports UDP for stable connections where no packet loss
+is expected. Here two instances communicate using defined ports.
+
+Usage example
+
+IP: 192.168.0.2
+```
+cannelloni -I vcan0 -R 192.168.0.3 -r 12000 -l 13000
+```
+
+IP: 192.168.0.3
+```
+cannelloni -I vcan0 -R 192.168.0.2 -r 13000 -l 12000
+```
+
+##SCTP
+
+With SCTP it is possible to use cannelloni over lossy connections
+where packet loss and re-ordering is very likely.
+The SCTP implementation uses the server-client model (for now).
+One instance binds on a fixed port and the other instance (client)
+connects to it.
+
+Usage example:
+
+IP: 192.168.0.2 (Server)
+```
+cannelloni -I vcan0 -S s
+```
+
+IP: 192.168.0.3 (Client)
+```
+cannelloni -I vcan0 -S c -R 192.168.0.2
+```
+
+If there is no remote IP supplied to the server instance, every client
+(any IP) will be accepted. Only one client can be connected at a time.
+After the client disconnects, the server waits for a new client.
+
+#Frame sorting
+
+CAN frames can be sorted by their ID in each ethernet frame to write
+high priority frames first on the receiving CAN bus.
+
+This can be achieved by supplying the `-s` option.
+
 #Contributing
+
 Please fork the repository, create a *separate* branch and create a PR
 for your work.
 
