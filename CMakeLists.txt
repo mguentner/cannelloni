@@ -5,6 +5,16 @@ ADD_DEFINITIONS(
     -std=c++11
 )
 
+execute_process(
+  COMMAND sed -n "s/#define\\s\\+LINUX_VERSION_CODE\\s\\+\\([0-9]\\+\\)/\\1/p" /usr/include/linux/version.h
+  OUTPUT_VARIABLE LINUX_VERSION_CODE
+)
+if(LINUX_VERSION_CODE LESS 198144)
+  # The Linux Kernel headers are older than version 3.6
+  # We need to use the ones shipped with cannelloni
+  include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endif()
+
 add_executable(cannelloni cannelloni.cpp)
 add_library(addsources STATIC
             connection.cpp
