@@ -23,9 +23,7 @@
 #include <iomanip>
 #include <string>
 
-#include <linux/can.h>
-
-#include "can.h"
+#include "cannelloni.h"
 
 using namespace cannelloni;
 

@@ -33,6 +33,7 @@
 #include <sys/ioctl.h>
 
 #include "canthread.h"
+#include "cannelloni.h"
 #include "logging.h"
 
 using namespace cannelloni;

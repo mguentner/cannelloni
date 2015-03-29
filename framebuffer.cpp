@@ -20,7 +20,6 @@
 
 
 #include "framebuffer.h"
-#include "can.h"
 #include "logging.h"
 
 using namespace cannelloni;

@@ -20,9 +20,9 @@
 
 #pragma once
 
-#include <linux/can.h>
 #include <list>
 #include <mutex>
+#include "cannelloni.h"
 
 namespace cannelloni {
 
