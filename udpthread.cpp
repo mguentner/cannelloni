@@ -125,7 +125,9 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &c
             error = true;
             break;
           }
-          frame->can_id = ntohl(*((canid_t*)rawData));
+          uint32_t tmp;
+          memcpy(&tmp, rawData, sizeof(canid_t));
+          frame->can_id = ntohl(tmp);
           /* += 4 */
           rawData += sizeof(canid_t);
           frame->len = *rawData;
@@ -300,7 +302,8 @@ void UDPThread::prepareBuffer() {
       m_frameBuffer->returnIntermediateBuffer(it);
       break;
     }
-    *((canid_t *) (data)) = htonl(frame->can_id);
+    canid_t tmp = htonl(frame->can_id);
+    memcpy(data, &tmp, sizeof(canid_t));
     /* += 4 */
     data += sizeof(canid_t);
     *data = frame->len;
