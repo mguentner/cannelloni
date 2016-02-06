@@ -125,7 +125,7 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &c
             error = true;
             break;
           }
-          uint32_t tmp;
+          canid_t tmp;
           memcpy(&tmp, rawData, sizeof(canid_t));
           frame->can_id = ntohl(tmp);
           /* += 4 */
