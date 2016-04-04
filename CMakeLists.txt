@@ -1,9 +1,5 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.1.0)
 project(cannelloni)
-
-ADD_DEFINITIONS(
-    -std=c++11
-)
 
 find_file(LINUX_VERSION_H "linux/version.h")
 if(LINUX_VERSION_H)
@@ -29,5 +25,7 @@ add_library(addsources STATIC
             sctpthread.cpp)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(cannelloni addsources pthread sctp)
+target_compile_features(cannelloni PRIVATE cxx_auto_type)
+target_compile_features(addsources PRIVATE cxx_auto_type)
 
 install(TARGETS cannelloni DESTINATION bin)
