@@ -194,7 +194,7 @@ for your work.
 
 #License
 
-Copyright 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
+Copyright 2014-2016 Maximilian Güntner <maximilian.guentner@gmail.com>
 
 cannelloni is licensed under the GPL, version 2. See gpl-2.0.txt for
 more information.
