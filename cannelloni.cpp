@@ -270,7 +270,6 @@ int main(int argc, char** argv) {
   UDPThread *netThread;
   if (useSCTP) {
 #ifdef SCTP_SUPPORT
-    dynamic_cast<SCTPThread*>(netThread);
     netThread = new SCTPThread(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
 #endif
   } else {

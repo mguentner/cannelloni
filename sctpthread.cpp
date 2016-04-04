@@ -258,5 +258,5 @@ ssize_t SCTPThread::sendBuffer(uint8_t *buffer, uint16_t len) {
   bzero(&sinfo, sizeof(sinfo));
   sinfo.sinfo_stream = 0;
   sinfo.sinfo_assoc_id = m_assoc_id;
-  sctp_send(m_socket, buffer, len, &sinfo, 0);
+  return sctp_send(m_socket, buffer, len, &sinfo, 0);
 }
