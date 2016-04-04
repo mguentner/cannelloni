@@ -1,7 +1,7 @@
 /*
  * This file is part of cannelloni, a SocketCAN over Ethernet tunnel.
  *
- * Copyright (C) 2014-2015 Maximilian Güntner <maximilian.guentner@gmail.com>
+ * Copyright (C) 2014-2016 Maximilian Güntner <maximilian.guentner@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 as
@@ -32,14 +32,19 @@
 
 #include <sys/signalfd.h>
 
+#include "config.h"
 #include "udpthread.h"
+
+#ifdef SCTP_SUPPORT
 #include "sctpthread.h"
+#endif
+
 #include "canthread.h"
 #include "framebuffer.h"
 #include "logging.h"
 #include "csvmapparser.h"
 
-#define CANNELLONI_VERSION 0.5
+#define CANNELLONI_VERSION 0.6
 
 using namespace cannelloni;
 
@@ -47,7 +52,9 @@ void printUsage() {
   std::cout << "cannelloni " << CANNELLONI_VERSION << std::endl;
   std::cout << "Usage: cannelloni OPTIONS" << std::endl;
   std::cout << "Available options:" << std::endl;
+#ifdef SCTP_SUPPORT
   std::cout << "\t -S ROLE \t\t enable SCTP transport." << std::endl;
+#endif
   std::cout << "\t\t\t c : act as client" << std::endl;
   std::cout << "\t\t\t s : act as server" << std::endl;
   std::cout << "\t -l PORT \t\t listening port, default: 20000" << std::endl;
@@ -72,7 +79,9 @@ int main(int argc, char** argv) {
   bool remoteIPSupplied = false;
   bool sortUDP = false;
   bool useSCTP = false;
+#ifdef SCTP_SUPPORT
   SCTPThreadRole sctpRole = CLIENT;
+#endif
   char remoteIP[INET_ADDRSTRLEN] = "127.0.0.1";
   uint16_t remotePort = 20000;
   char localIP[INET_ADDRSTRLEN] = "0.0.0.0";
@@ -85,8 +94,15 @@ int main(int argc, char** argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  while ((opt = getopt(argc, argv, "S:l:L:r:R:I:t:T:d:hs")) != -1) {
+#ifdef SCTP_SUPPORT
+  const std::string argument_options = "S:l:L:r:R:I:t:T:d:hs";
+#else
+  const std::string argument_options = "Sl:L:r:R:I:t:T:d:hs";
+#endif
+
+  while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
     switch(opt) {
+#ifdef SCTP_SUPPORT
       case 'S':
         switch (optarg[0]) {
           case 's':
@@ -100,11 +116,20 @@ int main(int argc, char** argv) {
             useSCTP = true;
             break;
           default:
-            std::cout << "-S only accepts [s]erver or [c]lient" << std::endl;
+            std::cout << "Usage Error: " << std::endl
+                      << "-S only accepts [s]erver or [c]lient" << std::endl;
             printUsage();
             return -1;
         }
         break;
+#else
+      case'S':
+            std::cout << "Usage Error: " << std::endl
+                      << "SCTP Transport is not supported in this build." << std::endl
+                                                                          << std::endl;
+            printUsage();
+            return -1;
+#endif
       case 'l':
         localPort = strtoul(optarg, NULL, 10);
         break;
@@ -148,13 +173,28 @@ int main(int argc, char** argv) {
         return -1;
     }
   }
+#ifdef SCTP_SUPPORT
   if (!remoteIPSupplied && !(useSCTP && sctpRole == SERVER)) {
-    std::cout << "Error: Remote IP not supplied" << std::endl;
+
+    std::cout << "Usage Error: " << std::endl
+              << "Remote IP not supplied" << std::endl
+                                          << std::endl;
     printUsage();
     return -1;
   }
+#else
+  if (!remoteIPSupplied) {
+    std::cout << "Usage Error: " << std::endl
+              << "Remote IP not supplied" << std::endl
+                                          << std::endl;
+    printUsage();
+    return -1;
+  }
+#endif
   if (bufferTimeout == 0) {
-    std::cout << "Error: Only non-zero timeouts are allowed" << std::endl;
+    std::cout << "Usage Error: " << std::endl
+              << "Only non-zero timeouts are allowed" << std::endl
+                                                      << std::endl;
     printUsage();
     return -1;
   }
@@ -229,8 +269,10 @@ int main(int argc, char** argv) {
 
   UDPThread *netThread;
   if (useSCTP) {
+#ifdef SCTP_SUPPORT
     dynamic_cast<SCTPThread*>(netThread);
     netThread = new SCTPThread(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
+#endif
   } else {
     netThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP, true);
   }
