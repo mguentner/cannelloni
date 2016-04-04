@@ -3,8 +3,6 @@ project(cannelloni)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
-
-
 ADD_DEFINITIONS(
     -std=c++11
 )
@@ -41,6 +39,8 @@ CONFIGURE_FILE(
   ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
   ${CMAKE_CURRENT_BINARY_DIR}/config.h
 )
+
+include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable(cannelloni cannelloni.cpp)
 add_library(addsources STATIC
