@@ -54,9 +54,9 @@ void printUsage() {
   std::cout << "Available options:" << std::endl;
 #ifdef SCTP_SUPPORT
   std::cout << "\t -S ROLE \t\t enable SCTP transport." << std::endl;
-#endif
   std::cout << "\t\t\t c : act as client" << std::endl;
   std::cout << "\t\t\t s : act as server" << std::endl;
+#endif
   std::cout << "\t -l PORT \t\t listening port, default: 20000" << std::endl;
   std::cout << "\t -L IP   \t\t listening IP, default: 0.0.0.0" << std::endl;
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
@@ -66,7 +66,11 @@ void printUsage() {
   std::cout << "\t -s           \t\t enable frame sorting" << std::endl;
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
+#ifdef SCTP_SUPPORT
   std::cout << "\t\t\t u : enable debugging of udp/sctp frames" << std::endl;
+#else
+  std::cout << "\t\t\t u : enable debugging of udp frames" << std::endl;
+#endif
   std::cout << "\t\t\t b : enable debugging of internal buffer structures" << std::endl;
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
