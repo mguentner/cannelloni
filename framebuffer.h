@@ -54,6 +54,7 @@ namespace cannelloni {
 class FrameBuffer {
   public:
     FrameBuffer(size_t size, size_t max);
+    ~FrameBuffer();
     /* Locks m_poolMutex and takes a free frame from m_framePool,
      * will grow the buffer if no frame is available
      *
@@ -61,7 +62,6 @@ class FrameBuffer {
      * will return the last frame in the buffer when overwriteLast is true
      *
      */
-    ~FrameBuffer();
     canfd_frame* requestFrame(bool overwriteLast, bool debug = false);
 
     /* If a read fails we need to give the frame back */
