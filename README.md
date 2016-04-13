@@ -14,7 +14,7 @@ Features:
 - easy debugging
 - CAN FD support on interfaces that support it
 - UDP support (fast, unreliable transport)
-- SCTP support (reliable transport)
+- SCTP support (optional, reliable transport)
 
 ##Compilation
 
@@ -25,6 +25,11 @@ You can build cannelloni using the following command.
 cmake -DCMAKE_BUILD_TYPE=Release
 make
 ```
+
+If you do not want or need SCTP support, you can disable it
+by setting `-DSCTP_SUPPORT=false`.
+SCTP support is also disabled if you don't have `lksctp-tools`
+installed.
 
 ##Installation
 
@@ -75,15 +80,15 @@ sudo tc qdisc add dev vcan0 root tbf rate 300kbit latency 100ms burst 1000
 ```
 This command will rate limit `vcan0` to 300 kbit/s.
 Try to match the rate limit with your physical interface on the remote.
-Keep also in mind that this can also increases the overall latency!
+Keep also in mind that this also increases the overall latency!
 
 Now start cannelloni on Machine 2:
 ```
 cannelloni -I vcan0 -R 192.168.0.2 -r 20000 -l 20000
 ```
 
-The tunnel is now complete and can be used on both machines. Simply try
-it by using `candump` and/or `cangen`.
+The tunnel is now complete and can be used on both machines.
+Simply try it by using `candump` and/or `cangen`.
 
 If something does not work, try the debug switch `-d cut` to find out
 what is wrong.
