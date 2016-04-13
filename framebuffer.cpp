@@ -29,7 +29,8 @@ FrameBuffer::FrameBuffer(size_t size, size_t max) :
   m_intermediateBuffer(new std::list<canfd_frame*>),
   m_bufferSize(0),
   m_intermediateBufferSize(0),
-  m_maxAllocCount(max)
+  m_maxAllocCount(max),
+  m_totalAllocCount(0)
 {
   resizePool(size, false);
 }

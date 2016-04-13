@@ -52,6 +52,7 @@ SCTPThread::SCTPThread(const struct debugOptions_t &debugOptions,
   , m_assoc_id(0)
   , m_role(role)
   , m_checkPeerConnect(checkPeer)
+  , m_connected(false)
 {
   m_payloadSize = SCTP_PAYLOAD_SIZE;
 }
