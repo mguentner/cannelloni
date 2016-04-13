@@ -52,7 +52,7 @@ inline void printCANInfo(const canfd_frame *frame) {
   } else {
     std::cout << "SFF Frame ID[" << std::setw(5) << std::dec << (frame->can_id & CAN_SFF_MASK) << "]";
   }
-  if ((frame->can_id & CAN_ERR_FLAG) == 0)
+  if (frame->can_id & CAN_ERR_FLAG)
     std::cout << "\t ERROR\t";
   else
     std::cout << "\t Length:" << std::dec << (int) canfd_len(frame) << "\t";
