@@ -95,7 +95,7 @@ what is wrong.
 
 ###Timeouts
 
-cannelloni either sends a full UDP frame or whatever it gots when
+cannelloni either sends a full UDP frame or whatever it gets when
 the timeout that has been specified by the `-t` flag is reached.
 The default value is 100000 us, so the worst case latency for any can
 frame is
