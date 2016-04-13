@@ -271,7 +271,7 @@ int main(int argc, char** argv) {
   localAddr.sin_port = htons(localPort);
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
-  UDPThread *netThread;
+  UDPThread *netThread = NULL;
   if (useSCTP) {
 #ifdef SCTP_SUPPORT
     netThread = new SCTPThread(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
@@ -279,9 +279,31 @@ int main(int argc, char** argv) {
   } else {
     netThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP, true);
   }
+  if (! netThread) {
+    lerror << "Unable to allocate a network thread." << std::endl;
+    return -1;
+  }
   CANThread *canThread = new CANThread(debugOptions, canInterface);
+  if (! canThread) {
+    lerror << "Unable to allocate a CAN thread." << std::endl;
+    delete netThread;
+    return -1;
+  }
   FrameBuffer *netFrameBuffer = new FrameBuffer(1000,16000);
+  if (! netFrameBuffer) {
+    lerror << "Unable to allocate a FrameBuffer." << std::endl;
+    delete netThread;
+    delete canThread;
+    return -1;
+  }
   FrameBuffer *canFrameBuffer = new FrameBuffer(1000,16000);
+  if (! canFrameBuffer) {
+    lerror << "Unable to allocate a FrameBuffer." << std::endl;
+    delete netThread;
+    delete canThread;
+    delete netFrameBuffer;
+    return -1;
+  }
   netThread->setPeerThread(canThread);
   netThread->setFrameBuffer(netFrameBuffer);
   netThread->setTimeoutTable(timeoutTable);
