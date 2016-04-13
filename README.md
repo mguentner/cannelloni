@@ -95,8 +95,9 @@ what is wrong.
 
 ###Timeouts
 
-cannelloni either sends a full UDP frame or whatever it gots when
-the timeout that has been specified by the `-t` flag is reached.
+cannelloni either sends a full UDP frame or all CAN frames that
+are queued when the timeout that has been specified by the `-t` option
+has been reached.
 The default value is 100000 us, so the worst case latency for any can
 frame is
 
@@ -104,7 +105,7 @@ frame is
 Lw ~= 100ms + Ethernet latency + Delay on Receiver
 ```
 
-If you have high priority frames but you also want a small ethernet 
+If you have high priority frames but you also want a small ethernet
 overhead, you can create a csv in the format
 ```
 CAN_ID,Timeout in us
