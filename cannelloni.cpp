@@ -44,12 +44,12 @@
 #include "logging.h"
 #include "csvmapparser.h"
 
-#define CANNELLONI_VERSION 0.6
+#define CANNELLONI_VERSION 20160414
 
 using namespace cannelloni;
 
 void printUsage() {
-  std::cout << "cannelloni " << CANNELLONI_VERSION << std::endl;
+  std::cout << "cannelloni Release: " << CANNELLONI_VERSION << std::endl;
   std::cout << "Usage: cannelloni OPTIONS" << std::endl;
   std::cout << "Available options:" << std::endl;
 #ifdef SCTP_SUPPORT
