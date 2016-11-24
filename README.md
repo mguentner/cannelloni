@@ -16,6 +16,10 @@ Features:
 - UDP support (fast, unreliable transport)
 - SCTP support (optional, reliable transport)
 
+# Important Usage Notice
+cannelloni is **not suited** for production deployments. Use it only in environments where packet loss is tolerable.
+There is **no guarantee** that CAN frames will reach their destination at all **and/or** in the right order.
+
 ##Compilation
 
 cannelloni uses cmake to generate a Makefile.
