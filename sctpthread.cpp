@@ -19,6 +19,7 @@
  */
 
 #include <chrono>
+#include <cstdio>
 #include <algorithm>
 
 #include <string.h>
