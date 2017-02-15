@@ -95,10 +95,6 @@ void SCTPThread::run() {
   m_transmitTimer.adjust(m_timeout, m_timeout);
   m_blockTimer.adjust(SELECT_TIMEOUT, SELECT_TIMEOUT);
 
-  if (m_role == SERVER) {
-    /* Mark this m_socket as passive*/
-    listen(m_serverSocket, 1);
-  }
   while (m_started) {
     if (!m_connected) {
       if (m_role == SERVER) {
@@ -109,6 +105,7 @@ void SCTPThread::run() {
         struct timeval timeout;
         const int nagle = 0;
 
+        listen(m_serverSocket, 1);
         FD_ZERO(&readfds);
         FD_SET(m_serverSocket, &readfds);
 
@@ -125,6 +122,8 @@ void SCTPThread::run() {
           continue;
         } /* else */
         m_socket = accept(m_serverSocket,(struct sockaddr*) &connAddr, &connAddrLen);
+        /* Reject all further connection attemps */
+        listen(m_serverSocket, 0);
         if (m_socket == -1) {
           lerror << "Error while accepting." << std::endl;
           continue;
