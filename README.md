@@ -1,4 +1,4 @@
-#cannelloni
+# cannelloni
 *a SocketCAN over Ethernet tunnel*
 
 cannelloni is written in C++11 and uses UDP to transfer CAN frames
@@ -20,7 +20,7 @@ Features:
 cannelloni is **not suited** for production deployments. Use it only in environments where packet loss is tolerable.
 There is **no guarantee** that CAN frames will reach their destination at all **and/or** in the right order.
 
-##Compilation
+## Compilation
 
 cannelloni uses cmake to generate a Makefile.
 You can build cannelloni using the following command.
@@ -35,7 +35,7 @@ by setting `-DSCTP_SUPPORT=false`.
 SCTP support is also disabled if you don't have `lksctp-tools`
 installed.
 
-##Installation
+## Installation
 
 Just install it using
 
@@ -43,9 +43,9 @@ Just install it using
   make install
 ```
 
-##Usage
+## Usage
 
-###Example
+### Example
 
 Two machines 1 and 2 need to be connected:
 
@@ -97,7 +97,7 @@ Simply try it by using `candump` and/or `cangen`.
 If something does not work, try the debug switch `-d cut` to find out
 what is wrong.
 
-###Timeouts
+### Timeouts
 
 cannelloni either sends a full UDP frame or all CAN frames that
 are queued when the timeout that has been specified by the `-t` option
@@ -147,9 +147,9 @@ INFO:cannelloni.cpp[155]:main:Other Frames:100000 us.
 [...]
 ```
 
-#Transports
+# Transports
 
-##UDP
+## UDP
 
 cannelloni supports UDP for stable connections where no packet loss
 is expected. Here two instances communicate using defined ports.
@@ -166,7 +166,7 @@ IP: 192.168.0.3
 cannelloni -I vcan0 -R 192.168.0.2 -r 13000 -l 12000
 ```
 
-##SCTP
+## SCTP
 
 With SCTP it is possible to use cannelloni over lossy connections
 where packet loss and re-ordering is very likely.
@@ -190,19 +190,19 @@ If there is no remote IP supplied to the server instance, every client
 (any IP) will be accepted. Only one client can be connected at a time.
 After the client disconnects, the server waits for a new client.
 
-#Frame sorting
+# Frame sorting
 
 CAN frames can be sorted by their ID in each ethernet frame to write
 high priority frames first on the receiving CAN bus.
 
 This can be achieved by supplying the `-s` option.
 
-#Contributing
+# Contributing
 
 Please fork the repository, create a *separate* branch and create a PR
 for your work.
 
-#License
+# License
 
 Copyright 2014-2017 Maximilian Güntner <code@sourcediver.org>
 
