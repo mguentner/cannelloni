@@ -29,7 +29,10 @@ using namespace cannelloni;
 
 inline std::string splitFilename(const std::string &path) {
   uint16_t pos = path.find_last_of("/\\");
-  return path.substr(pos+1);
+  if (pos == std::string::npos)
+    return path;
+  else
+    return path.substr(pos+1);
 }
 
 #define FUNCTION_STRING splitFilename(__FILE__) << "[" << std::dec <<  __LINE__ << "]:" << __FUNCTION__ << ":"
