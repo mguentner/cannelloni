@@ -28,7 +28,7 @@
 using namespace cannelloni;
 
 inline std::string splitFilename(const std::string &path) {
-  uint16_t pos = path.find_last_of("/\\");
+  size_t pos = path.find_last_of("/\\");
   if (pos == std::string::npos)
     return path;
   else
