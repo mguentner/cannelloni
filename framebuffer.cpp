@@ -245,14 +245,9 @@ size_t FrameBuffer::getFrameBufferSize() {
 bool FrameBuffer::resizePool(std::size_t size, bool debug) {
   std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
   for (size_t i=0; i<size; i++) {
-    canfd_frame *frame = new canfd_frame;
-    if (frame) {
-      m_framePool.push_back(frame);
-    } else {
-      m_totalAllocCount += i;
-      m_poolMutex.unlock();
-      return false;
-    }
+      auto f = new canfd_frame;
+      memset(f, 0, sizeof(*f));
+      m_framePool.push_back(f);
   }
   m_totalAllocCount += size;
   if (debug)
