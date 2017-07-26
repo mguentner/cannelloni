@@ -51,7 +51,6 @@ class CANThread : public ConnectionThread {
     bool m_canfd;
     Timer m_timer;
 
-    struct sockaddr_can m_localAddr;
     std::string m_canInterfaceName;
 
     /* Performance Counters */
