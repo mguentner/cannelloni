@@ -43,6 +43,8 @@
 #include "framebuffer.h"
 #include "logging.h"
 #include "csvmapparser.h"
+#include "make_unique.h"
+#include <memory>
 
 #define CANNELLONI_VERSION 20160414
 
@@ -271,44 +273,22 @@ int main(int argc, char** argv) {
   localAddr.sin_port = htons(localPort);
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
-  UDPThread *netThread = NULL;
+  std::unique_ptr<UDPThread> netThread;
   if (useSCTP) {
 #ifdef SCTP_SUPPORT
-    netThread = new SCTPThread(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
+    netThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
 #endif
   } else {
-    netThread = new UDPThread(debugOptions, remoteAddr, localAddr, sortUDP, true);
+    netThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, sortUDP, true);
   }
-  if (! netThread) {
-    lerror << "Unable to allocate a network thread." << std::endl;
-    return -1;
-  }
-  CANThread *canThread = new CANThread(debugOptions, canInterface);
-  if (! canThread) {
-    lerror << "Unable to allocate a CAN thread." << std::endl;
-    delete netThread;
-    return -1;
-  }
-  FrameBuffer *netFrameBuffer = new FrameBuffer(1000,16000);
-  if (! netFrameBuffer) {
-    lerror << "Unable to allocate a FrameBuffer." << std::endl;
-    delete netThread;
-    delete canThread;
-    return -1;
-  }
-  FrameBuffer *canFrameBuffer = new FrameBuffer(1000,16000);
-  if (! canFrameBuffer) {
-    lerror << "Unable to allocate a FrameBuffer." << std::endl;
-    delete netThread;
-    delete canThread;
-    delete netFrameBuffer;
-    return -1;
-  }
-  netThread->setPeerThread(canThread);
-  netThread->setFrameBuffer(netFrameBuffer);
+  auto canThread = std::make_unique<CANThread>(debugOptions, canInterface);
+  auto netFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
+  auto canFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
+  netThread->setPeerThread(canThread.get());
+  netThread->setFrameBuffer(netFrameBuffer.get());
   netThread->setTimeoutTable(timeoutTable);
-  canThread->setPeerThread(netThread);
-  canThread->setFrameBuffer(canFrameBuffer);
+  canThread->setPeerThread(netThread.get());
+  canThread->setFrameBuffer(canFrameBuffer.get());
   netThread->setTimeout(bufferTimeout);
   netThread->start();
   canThread->start();
@@ -334,10 +314,6 @@ int main(int argc, char** argv) {
   netFrameBuffer->clearPool();
   canFrameBuffer->clearPool();
 
-  delete netThread;
-  delete netFrameBuffer;
-  delete canThread;
-  delete canFrameBuffer;
   close(signalFD);
   return 0;
 }
