@@ -209,7 +209,7 @@ void SCTPThread::run() {
       }
       if (FD_ISSET(m_socket, &readfds)) {
         struct sctp_sndrcvinfo sinfo;
-        int flags;
+        int flags = 0;
         bzero(&sinfo, sizeof(sinfo));
         /* Clear buffer */
         memset(buffer, 0, RECEIVE_BUFFER_SIZE);
