@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <memory>
 #include <thread>
 
 namespace cannelloni {
@@ -46,7 +47,7 @@ class Thread {
     bool m_started;
   private:
     bool m_running;
-    std::thread *m_privThread;
+    std::unique_ptr<std::thread> m_privThread;
 };
 
 }

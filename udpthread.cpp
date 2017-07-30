@@ -37,6 +37,7 @@
 
 #include "udpthread.h"
 #include "logging.h"
+#include "make_unique.h"
 
 UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
                      const struct sockaddr_in &remoteAddr,
@@ -277,7 +278,10 @@ std::map<uint32_t,uint32_t>& UDPThread::getTimeoutTable() {
 }
 
 void UDPThread::prepareBuffer() {
-  uint8_t *packetBuffer = new uint8_t[m_payloadSize];
+  // TODO : this should be a std::array, since payloadSize is really known at
+  // compile time.
+  auto bufWrap = std::make_unique<uint8_t[]>(m_payloadSize);
+  auto packetBuffer = bufWrap.get();
   uint8_t *data;
   ssize_t transmittedBytes = 0;
   uint16_t frameCount = 0;
@@ -334,7 +338,6 @@ void UDPThread::prepareBuffer() {
   }
   m_frameBuffer->unlockIntermediateBuffer();
   m_frameBuffer->mergeIntermediateBuffer();
-  delete[] packetBuffer;
 }
 
 ssize_t UDPThread::sendBuffer(uint8_t *buffer, uint16_t len) {

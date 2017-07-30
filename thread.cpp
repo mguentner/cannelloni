@@ -19,13 +19,13 @@
  */
 
 #include "thread.h"
+#include "make_unique.h"
 
 using namespace cannelloni;
 
 Thread::Thread()
   : m_started(false)
   , m_running(false)
-  , m_privThread(NULL)
 { }
 
 Thread::~Thread() {
@@ -35,7 +35,7 @@ Thread::~Thread() {
 
 int Thread::start() {
   m_started = true;
-  m_privThread = new std::thread(&Thread::privRun, this);
+  m_privThread = std::make_unique<std::thread>(&Thread::privRun, this);
   m_running = true;
   return 0;
 }
@@ -47,7 +47,7 @@ void Thread::stop() {
 void Thread::join() {
   if (m_privThread)
     m_privThread->join();
-  delete m_privThread;
+  m_privThread.reset(nullptr);
 }
 
 bool Thread::isRunning() {

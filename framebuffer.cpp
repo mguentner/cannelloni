@@ -18,15 +18,13 @@
  *
  */
 
-
+#include <cstring>
 #include "framebuffer.h"
 #include "logging.h"
 
 using namespace cannelloni;
 
 FrameBuffer::FrameBuffer(size_t size, size_t max) :
-  m_buffer(new std::list<canfd_frame*>),
-  m_intermediateBuffer(new std::list<canfd_frame*>),
   m_bufferSize(0),
   m_intermediateBufferSize(0),
   m_maxAllocCount(max),
@@ -38,8 +36,6 @@ FrameBuffer::FrameBuffer(size_t size, size_t max) :
 FrameBuffer::~FrameBuffer() {
   /* delete all frames */
   clearPool();
-  delete m_buffer;
-  delete m_intermediateBuffer;
 }
 
 canfd_frame* FrameBuffer::requestFrame(bool overwriteLast, bool debug) {
@@ -97,7 +93,7 @@ void FrameBuffer::insertFramePool(canfd_frame *frame) {
 void FrameBuffer::insertFrame(canfd_frame *frame) {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
 
-  m_buffer->push_back(frame);
+  m_buffer.push_back(frame);
   m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
 
   /* We need one more byte for CAN_FD Frames */
@@ -108,7 +104,7 @@ void FrameBuffer::insertFrame(canfd_frame *frame) {
 void FrameBuffer::returnFrame(canfd_frame *frame) {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
 
-  m_buffer->push_front(frame);
+  m_buffer.push_front(frame);
   m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
   /* We need one more byte for CAN_FD Frames */
   if (frame->len & CANFD_FRAME)
@@ -117,12 +113,12 @@ void FrameBuffer::returnFrame(canfd_frame *frame) {
 
 canfd_frame* FrameBuffer::requestBufferFront() {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
-  if (m_buffer->empty()) {
+  if (m_buffer.empty()) {
     return NULL;
   }
   else {
-    canfd_frame *ret = m_buffer->front();
-    m_buffer->pop_front();
+    canfd_frame *ret = m_buffer.front();
+    m_buffer.pop_front();
     m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + canfd_len(ret));
     /* We need one more byte for CAN_FD Frames */
     if (ret->len & CANFD_FRAME)
@@ -133,12 +129,12 @@ canfd_frame* FrameBuffer::requestBufferFront() {
 
 canfd_frame* FrameBuffer::requestBufferBack() {
   std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
-  if (m_buffer->empty()) {
+  if (m_buffer.empty()) {
     return NULL;
   }
   else {
-    canfd_frame *ret = m_buffer->back();
-    m_buffer->pop_back();
+    canfd_frame *ret = m_buffer.back();
+    m_buffer.pop_back();
     m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + canfd_len(ret));
     /* We need one more byte for CAN_FD Frames */
     if (ret->len & CANFD_FRAME)
@@ -155,13 +151,13 @@ void FrameBuffer::swapBuffers() {
   std::lock(lock1, lock2);
 
   std::swap(m_bufferSize, m_intermediateBufferSize);
-  std::swap(m_buffer,     m_intermediateBuffer);
+  m_buffer.swap(m_intermediateBuffer);
 }
 
 void FrameBuffer::sortIntermediateBuffer() {
   std::lock_guard<std::recursive_mutex> lock(m_intermediateBufferMutex);
 
-  m_intermediateBuffer->sort(canfd_frame_comp());
+  m_intermediateBuffer.sort(canfd_frame_comp());
 }
 
 void FrameBuffer::mergeIntermediateBuffer() {
@@ -169,7 +165,7 @@ void FrameBuffer::mergeIntermediateBuffer() {
   std::unique_lock<std::recursive_mutex> lock2(m_intermediateBufferMutex, std::defer_lock);
   std::lock(lock1, lock2);
 
-  m_framePool.splice(m_framePool.end(), *m_intermediateBuffer);
+  m_framePool.splice(m_framePool.end(), m_intermediateBuffer);
   m_intermediateBufferSize = 0;
 }
 
@@ -180,9 +176,9 @@ void FrameBuffer::returnIntermediateBuffer(std::list<canfd_frame*>::iterator sta
 
   /* Don't splice since we need to keep track of the size */
   for (std::list<canfd_frame*>::iterator it = start;
-                                         it != m_intermediateBuffer->end();) {
+                                         it != m_intermediateBuffer.end();) {
     canfd_frame *frame = *it;
-    it = m_intermediateBuffer->erase(it);
+    it = m_intermediateBuffer.erase(it);
     returnFrame(frame);
   }
 }
@@ -190,7 +186,7 @@ void FrameBuffer::returnIntermediateBuffer(std::list<canfd_frame*>::iterator sta
 std::list<canfd_frame*>* FrameBuffer::getIntermediateBuffer() {
   /* We need to lock m_intermediateBuffer here */
   m_intermediateBufferMutex.lock();
-  return m_intermediateBuffer;
+  return &m_intermediateBuffer;
 }
 
 void FrameBuffer::unlockIntermediateBuffer() {
@@ -199,9 +195,9 @@ void FrameBuffer::unlockIntermediateBuffer() {
 
 void FrameBuffer::debug() {
   linfo << "FramePool: " << m_framePool.size() << std::endl;
-  linfo << "Buffer: " << m_buffer->size() << " (elements) "
+  linfo << "Buffer: " << m_buffer.size() << " (elements) "
         << m_bufferSize << " (bytes)" <<  std::endl;
-  linfo << "intermediateBuffer: " << m_intermediateBuffer->size() << std::endl;
+  linfo << "intermediateBuffer: " << m_intermediateBuffer.size() << std::endl;
 }
 
 void FrameBuffer::reset() {
@@ -211,8 +207,8 @@ void FrameBuffer::reset() {
   std::lock(lock1, lock2, lock3);
 
   /* Splice everything back into the pool */
-  m_framePool.splice(m_framePool.end(), *m_intermediateBuffer);
-  m_framePool.splice(m_framePool.end(), *m_buffer);
+  m_framePool.splice(m_framePool.end(), m_intermediateBuffer);
+  m_framePool.splice(m_framePool.end(), m_buffer);
 
   m_intermediateBufferSize = 0;
   m_bufferSize = 0;
@@ -227,10 +223,10 @@ void FrameBuffer::clearPool() {
   for (canfd_frame *f : m_framePool) {
     delete f;
   }
-  for (canfd_frame *f : *m_intermediateBuffer) {
+  for (canfd_frame *f : m_intermediateBuffer) {
     delete f;
   }
-  for (canfd_frame *f : *m_buffer) {
+  for (canfd_frame *f : m_buffer) {
     delete f;
   }
   m_framePool.clear();
@@ -245,14 +241,9 @@ size_t FrameBuffer::getFrameBufferSize() {
 bool FrameBuffer::resizePool(std::size_t size, bool debug) {
   std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
   for (size_t i=0; i<size; i++) {
-    canfd_frame *frame = new canfd_frame;
-    if (frame) {
-      m_framePool.push_back(frame);
-    } else {
-      m_totalAllocCount += i;
-      m_poolMutex.unlock();
-      return false;
-    }
+      auto f = new canfd_frame;
+      memset(f, 0, sizeof(*f));
+      m_framePool.push_back(f);
   }
   m_totalAllocCount += size;
   if (debug)

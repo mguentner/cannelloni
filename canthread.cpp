@@ -68,8 +68,10 @@ int CANThread::start() {
     lerror << "Could get index of interface >" << m_canInterfaceName << "<" << std::endl;
     return -1;
   }
-  m_localAddr.can_ifindex = canInterface.ifr_ifindex;
-  m_localAddr.can_family = AF_CAN;
+  struct sockaddr_can localAddr;
+  memset(&localAddr, 0, sizeof(localAddr));
+  localAddr.can_ifindex = canInterface.ifr_ifindex;
+  localAddr.can_family = AF_CAN;
   /* Check MTU of interface */
   if (ioctl(m_canSocket, SIOCGIFMTU, &canInterface) < 0) {
     lerror << "Could get MTU of interface >" << m_canInterfaceName << "<" <<  std::endl;
@@ -87,7 +89,7 @@ int CANThread::start() {
     lerror << "CAN_FD is not supported on >" << m_canInterfaceName << "<" << std::endl;
   }
 
-  if (bind(m_canSocket, (struct sockaddr *)&m_localAddr, sizeof(m_localAddr)) < 0) {
+  if (bind(m_canSocket, (struct sockaddr *)&localAddr, sizeof(localAddr)) < 0) {
     lerror << "Could not bind to interface" << std::endl;
     return -1;
   }

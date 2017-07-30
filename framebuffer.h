@@ -118,8 +118,8 @@ class FrameBuffer {
 
   private:
     std::list<canfd_frame*> m_framePool;
-    std::list<canfd_frame*> *m_buffer;
-    std::list<canfd_frame*> *m_intermediateBuffer;
+    std::list<canfd_frame*> m_buffer;
+    std::list<canfd_frame*> m_intermediateBuffer;
 
     uint64_t m_totalAllocCount;
     /* When filling/swapping the buffers we currently need a mutex */
