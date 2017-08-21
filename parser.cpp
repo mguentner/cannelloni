@@ -4,7 +4,7 @@
 #include <string.h>
 
 void parseFrames(uint16_t len, const uint8_t* buffer, std::function<canfd_frame*()> frameAllocator,
-        std::function<void(canfd_frame*)> frameReceiver)
+        std::function<void(canfd_frame*, bool)> frameReceiver)
 {
     using namespace cannelloni;
 
@@ -54,7 +54,7 @@ void parseFrames(uint16_t len, const uint8_t* buffer, std::function<canfd_frame*
             if (rawData - buffer + canfd_len(frame) > len)
             {
                 frame->len = 0;
-                frameReceiver(frame);
+                frameReceiver(frame, false);
 
                 throw std::runtime_error("Received incomplete packet / can header corrupt!");
             }
@@ -63,7 +63,7 @@ void parseFrames(uint16_t len, const uint8_t* buffer, std::function<canfd_frame*
             rawData += canfd_len(frame);
         }
 
-        frameReceiver(frame);
+        frameReceiver(frame, true);
     }
 }
 

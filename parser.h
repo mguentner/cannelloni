@@ -18,12 +18,17 @@
  *
  * @param len Buffer length
  * @param buffer Pointer to buffer containing Cannelloni packet
- * @param frameAllocator Callback responsible for providing memory for CAN frame.
- * @param frameReceiver Callback responsible for handling newly read CAN frame.
+ * @param frameAllocator Callback responsible for providing memory for CAN frame. Returns pointer
+ *  to allocated frame.
+ * @param frameReceiver Callback responsible for handling newly read CAN frame. First argument
+ *  is pointer to frame allocated by frameAllocator and filled with data by parseFrames.
+ *  Second argument tells whether frame was read with success and is correct (can be processed
+ *  further), or whether there was some error and it should not be processed (apart from
+ *  being deallocated)
  */
 void parseFrames(uint16_t len, const uint8_t* buffer,
         std::function<canfd_frame*()> frameAllocator,
-        std::function<void(canfd_frame*)> frameReceiver);
+        std::function<void(canfd_frame*, bool)> frameReceiver);
 
 /**
  * Builds Cannelloni packet from provided list of CAN frames

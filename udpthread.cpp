@@ -103,10 +103,13 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &c
         {
             return m_peerThread->getFrameBuffer()->requestFrame(true, m_debugOptions.buffer);
         };
-        auto receiver = [this](canfd_frame* f)
+        auto receiver = [this](canfd_frame* f, bool success)
         {
-            if (f->len == 0)
+            if (!success)
+            {
+                m_peerThread->getFrameBuffer()->insertFramePool(f);
                 return;
+            }
 
             m_peerThread->transmitFrame(f);
             if (m_debugOptions.can)
