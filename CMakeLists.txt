@@ -50,12 +50,17 @@ add_library(addsources STATIC
             timer.cpp
             udpthread.cpp
             canthread.cpp)
+
+add_library(cannelloni-common SHARED
+            parser.cpp)
+
 if(SCTP_SUPPORT)
     add_library(sctpthread STATIC sctpthread.cpp)
     target_link_libraries(sctpthread addsources sctp)
     target_link_libraries(addsources sctpthread)
 endif(SCTP_SUPPORT)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(cannelloni addsources pthread)
+target_link_libraries(cannelloni addsources cannelloni-common pthread)
 
 install(TARGETS cannelloni DESTINATION bin)
+install(TARGETS cannelloni-common DESTINATION lib)
