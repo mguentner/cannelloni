@@ -201,6 +201,7 @@ This can be achieved by supplying the `-s` option.
 
 cannelloni was discussed in the paper *Mapping CAN-to-Ethernet communication channels within virtualized embedded environments* on
 the Conference *Industrial Embedded Systems (SIES), 2015 10th IEEE International Symposium*.
+
 DOI: [10.1109/SIES.2015.7185064](http://dx.doi.org/10.1109/SIES.2015.7185064)
 
 The papers documentes a PoC how to virtualize CAN controllers similiar to the approach
