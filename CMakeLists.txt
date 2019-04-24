@@ -54,6 +54,12 @@ add_library(addsources STATIC
 add_library(cannelloni-common SHARED
             parser.cpp)
 
+set_target_properties ( cannelloni-common
+  PROPERTIES
+  VERSION 0.0.1
+  SOVERSION 0
+)
+
 if(SCTP_SUPPORT)
     add_library(sctpthread STATIC sctpthread.cpp)
     target_link_libraries(sctpthread addsources sctp)
