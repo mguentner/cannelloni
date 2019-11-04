@@ -20,6 +20,14 @@ Features:
 cannelloni is **not suited** for production deployments. Use it only in environments where packet loss is tolerable.
 There is **no guarantee** that CAN frames will reach their destination at all **and/or** in the right order.
 
+# Ecosystem
+
+- https://github.com/PhilippFux/ESP32_CAN_Interface
+- https://github.com/tuvok/qtCannelloniCanBus
+- https://github.com/mguentner/cannelloni_ports (currently only a lwIP implementation)
+- https://github.com/epozzobon/lasagne (another esp32)
+- https://github.com/GENIVI/CANdevStudio
+
 ## Compilation
 
 cannelloni uses cmake to generate a Makefile.
@@ -214,7 +222,7 @@ for your work.
 
 # License
 
-Copyright 2014-2017 Maximilian Güntner <code@sourcediver.org>
+Copyright 2014-2019 Maximilian Güntner <code@mguentner.de>
 
 cannelloni is licensed under the GPL, version 2. See gpl-2.0.txt for
 more information.
