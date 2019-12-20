@@ -183,11 +183,13 @@ void CANThread::transmitBuffer() {
   /* Loop here until buffer is empty or we cannot write anymore */
   while(1) {
     canfd_frame *frame = m_frameBuffer->requestBufferFront();
+    bool frameIsCANFD = false;
     if (frame == NULL)
       break;
     /* Check whether we are operating on a CAN FD socket */
     if (m_canfd) {
       if (frame->len & CANFD_FRAME) {
+        frameIsCANFD = true;
         /* Clear the CANFD_FRAME bit in len */
         frame->len &= ~(CANFD_FRAME);
         transmittedBytes = write(m_canSocket, frame, CANFD_MTU);
@@ -213,6 +215,10 @@ void CANThread::transmitBuffer() {
       m_frameBuffer->insertFramePool(frame);
       m_txCount++;
     } else {
+      /* If it was a CAN FD frame, encode this in len again before putting it back into buffer */
+      if (frameIsCANFD) {
+        frame->len |= CANFD_FRAME;
+      }
       /* Put frame back into buffer */
       m_frameBuffer->returnFrame(frame);
       /* Revisit this function after 25 us */
