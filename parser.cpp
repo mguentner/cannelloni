@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <string.h>
+#include <stdexcept>
 
 void parseFrames(uint16_t len, const uint8_t* buffer, std::function<canfd_frame*()> frameAllocator,
         std::function<void(canfd_frame*, bool)> frameReceiver)

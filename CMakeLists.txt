@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.1)
 project(cannelloni)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
@@ -60,6 +60,8 @@ set_target_properties ( cannelloni-common
   SOVERSION 0
 )
 
+include(GNUInstallDirs)
+
 if(SCTP_SUPPORT)
     add_library(sctpthread STATIC sctpthread.cpp)
     target_link_libraries(sctpthread addsources sctp)
@@ -68,5 +70,5 @@ endif(SCTP_SUPPORT)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(cannelloni addsources cannelloni-common pthread)
 
-install(TARGETS cannelloni DESTINATION bin)
-install(TARGETS cannelloni-common DESTINATION lib)
+install(TARGETS cannelloni DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS cannelloni-common DESTINATION ${CMAKE_INSTALL_LIBDIR})
