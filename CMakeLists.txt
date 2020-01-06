@@ -3,10 +3,6 @@ project(cannelloni)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
-ADD_DEFINITIONS(
-    -std=c++11
-)
-
 # Options
 option(SCTP_SUPPORT "SCTP_SUPPORT" ON)
 
@@ -69,6 +65,8 @@ if(SCTP_SUPPORT)
 endif(SCTP_SUPPORT)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(cannelloni addsources cannelloni-common pthread)
+target_compile_features(cannelloni PRIVATE cxx_auto_type)
+target_compile_features(addsources PRIVATE cxx_auto_type)
 
 install(TARGETS cannelloni DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS cannelloni-common DESTINATION ${CMAKE_INSTALL_LIBDIR})
