@@ -46,7 +46,7 @@
 #include "make_unique.h"
 #include <memory>
 
-#define CANNELLONI_VERSION 20160414
+#define CANNELLONI_VERSION "1.0.0"
 
 using namespace cannelloni;
 
