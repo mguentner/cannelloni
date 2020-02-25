@@ -42,10 +42,10 @@ CANThread::CANThread(const struct debugOptions_t &debugOptions,
                      const std::string &canInterfaceName = "can0")
   : ConnectionThread()
   , m_canSocket(0)
+  , m_canfd(false)
   , m_canInterfaceName(canInterfaceName)
   , m_rxCount(0)
   , m_txCount(0)
-  , m_canfd(false)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
 }
@@ -53,7 +53,6 @@ CANThread::CANThread(const struct debugOptions_t &debugOptions,
 CANThread::~CANThread() {}
 
 int CANThread::start() {
-  struct timeval timeout;
   struct ifreq canInterface;
   uint32_t canfd_on = 1;
   /* Setup our socket */
@@ -105,7 +104,6 @@ void CANThread::stop() {
 void CANThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
-  struct itimerspec ts;
 
   linfo << "CANThread up and running" << std::endl;
 
