@@ -46,13 +46,13 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
                      bool sort,
                      bool checkPeer)
   : ConnectionThread()
+  , m_sort(sort)
+  , m_checkPeer(checkPeer)
   , m_socket(0)
   , m_sequenceNumber(0)
   , m_timeout(100)
   , m_rxCount(0)
   , m_txCount(0)
-  , m_sort(sort)
-  , m_checkPeer(checkPeer)
   , m_payloadSize(UDP_PAYLOAD_SIZE)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
@@ -254,9 +254,6 @@ void UDPThread::prepareBuffer() {
   auto packetBuffer = bufWrap.get();
 
   ssize_t transmittedBytes = 0;
-
-
-  struct timeval currentTime;
 
   m_frameBuffer->swapBuffers();
   if (m_sort)

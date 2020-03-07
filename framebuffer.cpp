@@ -25,10 +25,10 @@
 using namespace cannelloni;
 
 FrameBuffer::FrameBuffer(size_t size, size_t max) :
+  m_totalAllocCount(0),
   m_bufferSize(0),
   m_intermediateBufferSize(0),
-  m_maxAllocCount(max),
-  m_totalAllocCount(0)
+  m_maxAllocCount(max)
 {
   resizePool(size, false);
 }
