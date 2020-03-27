@@ -46,7 +46,7 @@
 #include "make_unique.h"
 #include <memory>
 
-#define CANNELLONI_VERSION "1.0.0"
+#define CANNELLONI_VERSION "1.0.1"
 
 using namespace cannelloni;
 
@@ -66,6 +66,7 @@ void printUsage() {
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
   std::cout << "\t -s           \t\t enable frame sorting" << std::endl;
+  std::cout << "\t -p           \t\t no peer checking" << std::endl;
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
 #ifdef SCTP_SUPPORT
@@ -84,6 +85,7 @@ int main(int argc, char** argv) {
   int opt;
   bool remoteIPSupplied = false;
   bool sortUDP = false;
+  bool checkPeer = true;
   bool useSCTP = false;
 #ifdef SCTP_SUPPORT
   SCTPThreadRole sctpRole = CLIENT;
@@ -101,9 +103,9 @@ int main(int argc, char** argv) {
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
 #ifdef SCTP_SUPPORT
-  const std::string argument_options = "S:l:L:r:R:I:t:T:d:hs";
+  const std::string argument_options = "S:l:L:r:R:I:t:T:d:hsp";
 #else
-  const std::string argument_options = "Sl:L:r:R:I:t:T:d:hs";
+  const std::string argument_options = "Sl:L:r:R:I:t:T:d:hsp";
 #endif
 
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
@@ -140,13 +142,15 @@ int main(int argc, char** argv) {
         localPort = strtoul(optarg, NULL, 10);
         break;
       case 'L':
-        strncpy(localIP, optarg, INET_ADDRSTRLEN);
+        strncpy(localIP, optarg, INET_ADDRSTRLEN-1);
+        localIP[INET_ADDRSTRLEN-1] = '\0';
         break;
       case 'r':
         remotePort = strtoul(optarg, NULL, 10);
         break;
       case 'R':
-        strncpy(remoteIP, optarg, INET_ADDRSTRLEN);
+        strncpy(remoteIP, optarg, INET_ADDRSTRLEN-1);
+        remoteIP[INET_ADDRSTRLEN-1] = '\0';
         remoteIPSupplied = true;
         break;
       case 'I':
@@ -173,6 +177,9 @@ int main(int argc, char** argv) {
         return 0;
       case 's':
         sortUDP = true;
+        break;
+      case 'p':
+        checkPeer = false;
         break;
       default:
         printUsage();
@@ -279,7 +286,7 @@ int main(int argc, char** argv) {
     netThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
 #endif
   } else {
-    netThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, sortUDP, true);
+    netThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, sortUDP, checkPeer);
   }
   auto canThread = std::make_unique<CANThread>(debugOptions, canInterface);
   auto netFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);

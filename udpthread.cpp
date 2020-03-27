@@ -91,7 +91,7 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &c
   } else {
     if ((memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) && m_checkPeer) {
       lwarn << "Received a packet from " << clientAddrStr
-            << ", which is not set as a remote." << std::endl;
+            << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
     } else {
 
         if (m_debugOptions.udp) {
