@@ -118,11 +118,11 @@ void SCTPThread::run() {
           lerror << "select error" << std::endl;
           continue;
         } else if (ret == 0) {
-          /* Timeout occured, checking whether m_started changed */
+          /* Timeout occurred, checking whether m_started changed */
           continue;
         } /* else */
         m_socket = accept(m_serverSocket,(struct sockaddr*) &connAddr, &connAddrLen);
-        /* Reject all further connection attemps */
+        /* Reject all further connection attempts */
         listen(m_serverSocket, 0);
         if (m_socket == -1) {
           lerror << "Error while accepting." << std::endl;
@@ -249,7 +249,7 @@ void SCTPThread::transmitFrame(canfd_frame *frame) {
     /* We need to drop that frame, since we are not connected */
     m_frameBuffer->insertFramePool(frame);
     if (m_debugOptions.udp) {
-      linfo << "Not connected. Droping frame" << std::endl;
+      linfo << "Not connected. Dropping frame" << std::endl;
     }
   }
 }
