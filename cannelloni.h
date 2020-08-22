@@ -47,7 +47,7 @@ struct __attribute__((__packed__)) CannelloniDataPacket {
 };
 
 /*
- * Since we are buffering CAN Frames, it is a good idea to
+ * Since we are buffering CAN Frames, it is a good idea
  * to order them by their identifier to mimic a CAN bus
  */
 struct canfd_frame_comp
@@ -56,7 +56,7 @@ struct canfd_frame_comp
                           const struct canfd_frame *f2) const
   {
     canid_t id1, id2;
-    /* Be extra careful when doing the comparision */
+    /* Be extra careful when doing the comparison */
     if (f1->can_id & CAN_EFF_FLAG)
       id1 = f1->can_id & CAN_EFF_MASK;
     else
