@@ -136,7 +136,7 @@ void CANThread::run() {
       receivedBytes = recv(m_canSocket, frame, sizeof(struct canfd_frame), 0);
       if (receivedBytes < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
-          /* Timeout occured */
+          /* Timeout occurred */
           m_peerThread->getFrameBuffer()->insertFramePool(frame);
           continue;
         } else {
