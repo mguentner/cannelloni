@@ -30,7 +30,7 @@ class Thread {
     Thread();
     virtual ~Thread();
     virtual int start();
-    /* this is function tell the thread to stop */
+    /* this is the function to tell the thread to stop */
     virtual void stop();
     /* joins the thread */
     void join();
