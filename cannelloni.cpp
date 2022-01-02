@@ -297,9 +297,9 @@ int main(int argc, char** argv) {
   canThread->setPeerThread(netThread.get());
   canThread->setFrameBuffer(canFrameBuffer.get());
   netThread->setTimeout(bufferTimeout);
-  netThread->start();
-  canThread->start();
-  while (1) {
+  int netStartReturn = netThread->start();
+  int canStartReturn = canThread->start();
+  while (1 && netStartReturn == 0 && canStartReturn == 0) {
     ssize_t receivedBytes = read(signalFD, &signalFdInfo, sizeof(struct signalfd_siginfo));
     if (receivedBytes != sizeof(struct signalfd_siginfo)) {
       lerror << "signalfd read error" << std::endl;
