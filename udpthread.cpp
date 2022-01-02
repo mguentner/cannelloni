@@ -31,6 +31,7 @@
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/timerfd.h>
+#include <sys/socket.h>
 
 #include <net/if.h>
 #include <arpa/inet.h>
@@ -67,8 +68,19 @@ int UDPThread::start() {
     lerror << "socket Error" << std::endl;
     return -1;
   }
+
+  /* Setup broadcast option */
+  int broadcastEnable = 1;
+  if(setsockopt(m_socket,SOL_SOCKET,SO_BROADCAST,&broadcastEnable,sizeof(broadcastEnable)) < 0)
+  {
+      lerror <<"Error in setting Broadcast option"<< std::endl;
+      close(m_socket);
+      return -1;
+  }
+
   if (bind(m_socket, (struct sockaddr *)&m_localAddr, sizeof(m_localAddr)) < 0) {
     lerror << "Could not bind to address" << std::endl;
+    close(m_socket);
     return -1;
   }
   return Thread::start();
