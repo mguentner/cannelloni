@@ -38,45 +38,48 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 
-#include <netinet/sctp.h>
+#include <netinet/tcp.h>
 
 #include "logging.h"
-#include "sctpthread.h"
+#include "tcpthread.h"
 
-SCTPThread::SCTPThread(const struct debugOptions_t &debugOptions,
+TCPThread::TCPThread(const struct debugOptions_t &debugOptions,
                        const struct sockaddr_in &remoteAddr,
                        const struct sockaddr_in &localAddr,
                        bool sort,
                        bool checkPeer,
-                       SCTPThreadRole role)
+                       TCPThreadRole role)
   : UDPThread(debugOptions, remoteAddr, localAddr, sort, checkPeer)
-  , m_assoc_id(0)
-  , m_role(role)
   , m_checkPeerConnect(checkPeer)
   , m_connected(false)
+  , m_role(role)
 {
-  m_payloadSize = SCTP_PAYLOAD_SIZE;
+  m_payloadSize = TCP_PAYLOAD_SIZE;
 }
 
-int SCTPThread::start() {
+int TCPThread::start() {
   /*
    * Since we are currently not using multihoming and/or
    * one-to-many connections, we can also use SOCK_STREAM
    * instead of SOCK_SEQPACKET
    */
-  if (m_role == SCTP_SERVER) {
-    m_serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+  if (m_role == TCP_SERVER) {
+    m_serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (m_serverSocket < 0) {
       lerror << "socket error" << std::endl;
       return -1;
     }
+
+    const int option = 1;
+    setsockopt(m_serverSocket, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
+
     if (bind(m_serverSocket, (struct sockaddr *) &m_localAddr, sizeof(m_localAddr)) < 0) {
       lerror << "Could not bind to address" << std::endl;
       return -1;
     }
   }
   /*
-   * UDPThread::parsePacket will check the remote address. Using SCTP, a packet
+   * UDPThread::parsePacket will check the remote address. Using TCP, a packet
    * might arrive from a different interface than expected.
    * We just set checkPeer to false and only check whether connects are valid
    */
@@ -84,12 +87,11 @@ int SCTPThread::start() {
   return Thread::start();
 }
 
-void SCTPThread::run() {
+void TCPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
   uint8_t buffer[RECEIVE_BUFFER_SIZE];
   struct sockaddr_in clientAddr;
-  socklen_t clientAddrLen = sizeof(struct sockaddr_in);
 
   /* Set interval to m_timeout */
   m_transmitTimer.adjust(m_timeout, m_timeout);
@@ -97,7 +99,7 @@ void SCTPThread::run() {
 
   while (m_started) {
     if (!m_connected) {
-      if (m_role == SCTP_SERVER) {
+      if (m_role == TCP_SERVER) {
         struct sockaddr_in connAddr;
         char connAddrStr[INET_ADDRSTRLEN];
         socklen_t connAddrLen = sizeof(connAddr);
@@ -154,21 +156,21 @@ void SCTPThread::run() {
         /* Clear the old entries in frameBuffer */
         m_frameBuffer->reset();
         /* Disable Nagle for this connection */
-        if (setsockopt(m_socket, IPPROTO_SCTP, SCTP_NODELAY, &nagle, sizeof(nagle))) {
+        if (setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(nagle))) {
           lerror << "Could not disable Nagle." << std::endl;
         }
       } else {
         const int nagle = 0;
-        m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+        m_socket = socket(AF_INET, SOCK_STREAM, 0);
         if (m_socket < 0) {
           lerror << "socket error" << std::endl;
           continue;
         }
-        if (setsockopt(m_socket, IPPROTO_SCTP, SCTP_NODELAY, &nagle, sizeof(nagle))) {
+        if (setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(nagle))) {
           lerror << "Could not disable Nagle." << std::endl;
         }
-        linfo << "Connecting..." << std::endl;
-        if (sctp_connectx(m_socket, (struct sockaddr *) &m_remoteAddr, 1, &m_assoc_id) < 0) {
+        linfo << "Connecting to " << inet_ntoa(m_remoteAddr.sin_addr) << ":" << ntohs(m_remoteAddr.sin_port) << "..." << std::endl;
+        if (connect(m_socket, (struct sockaddr *) &m_remoteAddr, sizeof(m_remoteAddr)) < 0) {
           close(m_socket);
           linfo << "Connect failed." << std::endl;
           /* Wait here for some time */
@@ -208,13 +210,9 @@ void SCTPThread::run() {
         m_blockTimer.read();
       }
       if (FD_ISSET(m_socket, &readfds)) {
-        struct sctp_sndrcvinfo sinfo;
-        int flags = 0;
-        bzero(&sinfo, sizeof(sinfo));
         /* Clear buffer */
         memset(buffer, 0, RECEIVE_BUFFER_SIZE);
-        receivedBytes = sctp_recvmsg(m_socket, buffer, RECEIVE_BUFFER_SIZE,
-                        (struct sockaddr *) &clientAddr, &clientAddrLen, &sinfo, &flags);
+        receivedBytes = read(m_socket, buffer, RECEIVE_BUFFER_SIZE);
         if (receivedBytes < 0) {
           lerror << "recvfrom error." << std::endl;
           /* close connection */
@@ -234,15 +232,15 @@ void SCTPThread::run() {
   if (m_debugOptions.buffer) {
     m_frameBuffer->debug();
   }
-  linfo << "Shutting down. SCTP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
+  linfo << "Shutting down. TCP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
   m_connected = false;
   close(m_socket);
-  if (m_role == SCTP_SERVER) {
+  if (m_role == TCP_SERVER) {
     close(m_serverSocket);
   }
 }
 
-void SCTPThread::transmitFrame(canfd_frame *frame) {
+void TCPThread::transmitFrame(canfd_frame *frame) {
   if (m_connected) {
     UDPThread::transmitFrame(frame);
   } else {
@@ -254,10 +252,6 @@ void SCTPThread::transmitFrame(canfd_frame *frame) {
   }
 }
 
-ssize_t SCTPThread::sendBuffer(uint8_t *buffer, uint16_t len) {
-  struct sctp_sndrcvinfo sinfo;
-  bzero(&sinfo, sizeof(sinfo));
-  sinfo.sinfo_stream = 0;
-  sinfo.sinfo_assoc_id = m_assoc_id;
-  return sctp_send(m_socket, buffer, len, &sinfo, 0);
+ssize_t TCPThread::sendBuffer(uint8_t *buffer, uint16_t len) {
+  return send(m_socket, buffer, len, 0);
 }

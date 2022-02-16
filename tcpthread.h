@@ -21,24 +21,24 @@
 #pragma once
 
 #include "udpthread.h"
-#include <netinet/sctp.h>
+#include <netinet/tcp.h>
 
 namespace cannelloni {
 
 /* The common header + one Chunk Header */
-#define SCTP_HEADER_SIZE 12
-#define SCTP_PAYLOAD_SIZE ETHERNET_MTU-IP_HEADER_SIZE-SCTP_HEADER_SIZE
+#define TCP_HEADER_SIZE 20
+#define TCP_PAYLOAD_SIZE ETHERNET_MTU-IP_HEADER_SIZE-TCP_HEADER_SIZE
 
-enum SCTPThreadRole {SCTP_SERVER, SCTP_CLIENT};
+enum TCPThreadRole {TCP_SERVER, TCP_CLIENT};
 
-class SCTPThread : public UDPThread {
+class TCPThread : public UDPThread {
   public:
-    SCTPThread(const struct debugOptions_t &debugOptions,
+    TCPThread(const struct debugOptions_t &debugOptions,
                const struct sockaddr_in &remoteAddr,
                const struct sockaddr_in &localAddr,
                bool sort,
                bool checkPeer,
-               SCTPThreadRole role);
+               TCPThreadRole role);
 
     virtual int start();
     virtual void run();
@@ -53,9 +53,8 @@ class SCTPThread : public UDPThread {
   private:
     bool m_checkPeerConnect;
     int m_serverSocket;
-    sctp_assoc_t m_assoc_id;
     bool m_connected;
-    SCTPThreadRole m_role;
+    TCPThreadRole m_role;
 };
 
 }

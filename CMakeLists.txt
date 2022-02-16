@@ -47,6 +47,7 @@ add_library(addsources STATIC
             thread.cpp
             timer.cpp
             udpthread.cpp
+            tcpthread.cpp
             canthread.cpp)
 
 add_library(cannelloni-common SHARED
