@@ -217,25 +217,13 @@ int main(int argc, char** argv) {
     printUsage();
     return -1;
   }
-#ifdef SCTP_SUPPORT
-  if (!remoteIPSupplied &&
-        !useSCTP && !useTCP) {
-
+  if (!remoteIPSupplied && !useSCTP && !useTCP) {
     std::cout << "Usage Error: " << std::endl
               << "Remote IP not supplied" << std::endl
                                           << std::endl;
     printUsage();
     return -1;
   }
-#else
-  if (!remoteIPSupplied) {
-    std::cout << "Usage Error: " << std::endl
-              << "Remote IP not supplied" << std::endl
-                                          << std::endl;
-    printUsage();
-    return -1;
-  }
-#endif
   if (bufferTimeout == 0) {
     std::cout << "Usage Error: " << std::endl
               << "Only non-zero timeouts are allowed" << std::endl
