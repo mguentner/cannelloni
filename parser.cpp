@@ -1,8 +1,44 @@
 #include "parser.h"
 
 #include <arpa/inet.h>
+#include <cstddef>
 #include <string.h>
 #include <stdexcept>
+#include <sys/types.h>
+
+ssize_t parseCANFrame(canfd_frame* frame, const uint8_t* rawData, const uint8_t* rawDataEnd) {
+  using namespace cannelloni;
+  const uint8_t* rawDataOrig = rawData;
+  canid_t tmp;
+  memcpy(&tmp, rawData, sizeof (canid_t));
+  frame->can_id = ntohl(tmp);
+  /* += 4 */
+  rawData += sizeof (canid_t);
+  frame->len = *rawData;
+  /* += 1 */
+  rawData += sizeof (frame->len);
+  /* If this is a CAN FD frame, also retrieve the flags */
+  if (frame->len & CANFD_FRAME)
+  {
+      frame->flags = *rawData;
+      /* += 1 */
+      rawData += sizeof (frame->flags);
+  }
+  /* RTR Frames have no data section although they have a dlc */
+  if ((frame->can_id & CAN_RTR_FLAG) == 0)
+  {
+      /* Check again now that we know the dlc */
+      if (rawData + canfd_len(frame) > rawDataEnd)
+      {
+          frame->len = 0;
+          return -1;
+      }
+
+      memcpy(frame->data, rawData, canfd_len(frame));
+      rawData += canfd_len(frame);
+  }
+  return rawData-rawDataOrig;
+}
 
 void parseFrames(uint16_t len, const uint8_t* buffer, std::function<canfd_frame*()> frameAllocator,
         std::function<void(canfd_frame*, bool)> frameReceiver)
@@ -22,6 +58,7 @@ void parseFrames(uint16_t len, const uint8_t* buffer, std::function<canfd_frame*
         return; // Empty packets silently ignored
 
     const uint8_t* rawData = buffer + CANNELLONI_DATA_PACKET_BASE_SIZE;
+    const uint8_t* bufferEnd = buffer + len;
 
     for (uint16_t i = 0; i < ntohs(data->count); i++)
     {
@@ -33,39 +70,38 @@ void parseFrames(uint16_t len, const uint8_t* buffer, std::function<canfd_frame*
         if (!frame)
             throw std::runtime_error("Allocation error.");
 
-        canid_t tmp;
-        memcpy(&tmp, rawData, sizeof (canid_t));
-        frame->can_id = ntohl(tmp);
-        /* += 4 */
-        rawData += sizeof (canid_t);
-        frame->len = *rawData;
-        /* += 1 */
-        rawData += sizeof (frame->len);
-        /* If this is a CAN FD frame, also retrieve the flags */
-        if (frame->len & CANFD_FRAME)
-        {
-            frame->flags = *rawData;
-            /* += 1 */
-            rawData += sizeof (frame->flags);
+        ssize_t bytesParsed = parseCANFrame(frame, rawData, bufferEnd);
+        rawData+=bytesParsed;
+        if (bytesParsed > 0) {
+            frameReceiver(frame, true);
+        } else {
+            frameReceiver(frame, false);
+            throw std::runtime_error("Received incomplete packet / can header corrupt!");
         }
-        /* RTR Frames have no data section although they have a dlc */
-        if ((frame->can_id & CAN_RTR_FLAG) == 0)
-        {
-            /* Check again now that we know the dlc */
-            if (rawData - buffer + canfd_len(frame) > len)
-            {
-                frame->len = 0;
-                frameReceiver(frame, false);
-
-                throw std::runtime_error("Received incomplete packet / can header corrupt!");
-            }
-
-            memcpy(frame->data, rawData, canfd_len(frame));
-            rawData += canfd_len(frame);
-        }
-
-        frameReceiver(frame, true);
     }
+}
+
+size_t encodeFrame(uint8_t *data, canfd_frame *frame) {
+    using namespace cannelloni;
+    uint8_t *dataOrig = data;
+    canid_t tmp = htonl(frame->can_id);
+    memcpy(data, &tmp, sizeof(canid_t));
+    /* += 4 */
+    data += sizeof(canid_t);
+    *data = frame->len;
+    /* += 1 */
+    data += sizeof(frame->len);
+    /* If this is a CAN FD frame, also send the flags */
+    if (frame->len & CANFD_FRAME) {
+        *data = frame->flags;
+        /* += 1 */
+        data += sizeof(frame->flags);
+    }
+    if ((frame->can_id & CAN_RTR_FLAG) == 0) {
+        memcpy(data, frame->data, canfd_len(frame));
+        data += canfd_len(frame);
+    }
+    return data-dataOrig;
 }
 
 uint8_t* buildPacket(uint16_t len, uint8_t* packetBuffer,
@@ -87,25 +123,7 @@ uint8_t* buildPacket(uint16_t len, uint8_t* packetBuffer,
             handleOverflow(frames, it);
             break;
         }
-        canid_t tmp = htonl(frame->can_id);
-        memcpy(data, &tmp, sizeof(canid_t));
-        /* += 4 */
-        data += sizeof(canid_t);
-        *data = frame->len;
-        /* += 1 */
-        data += sizeof(frame->len);
-        /* If this is a CAN FD frame, also send the flags */
-        if (frame->len & CANFD_FRAME)
-        {
-            *data = frame->flags;
-            /* += 1 */
-            data += sizeof(frame->flags);
-        }
-        if ((frame->can_id & CAN_RTR_FLAG) == 0)
-        {
-            memcpy(data, frame->data, canfd_len(frame));
-            data += canfd_len(frame);
-        }
+        data += encodeFrame(data, frame);
         frameCount++;
     }
     struct CannelloniDataPacket* dataPacket;

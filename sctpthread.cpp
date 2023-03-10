@@ -64,7 +64,7 @@ int SCTPThread::start() {
    * one-to-many connections, we can also use SOCK_STREAM
    * instead of SOCK_SEQPACKET
    */
-  if (m_role == SERVER) {
+  if (m_role == SCTP_SERVER) {
     m_serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
     if (m_serverSocket < 0) {
       lerror << "socket error" << std::endl;
@@ -97,7 +97,7 @@ void SCTPThread::run() {
 
   while (m_started) {
     if (!m_connected) {
-      if (m_role == SERVER) {
+      if (m_role == SCTP_SERVER) {
         struct sockaddr_in connAddr;
         char connAddrStr[INET_ADDRSTRLEN];
         socklen_t connAddrLen = sizeof(connAddr);
@@ -146,9 +146,8 @@ void SCTPThread::run() {
             std::this_thread::sleep_for(std::chrono::seconds(2));
             continue;
           }
-        } else {
-          linfo << "Got a connection from " << connAddrStr << std::endl;
         }
+        linfo << "Got a connection from " << connAddrStr << std::endl;
         /* At this point we have a valid connection */
         m_connected = true;
         /* Clear the old entries in frameBuffer */
@@ -237,7 +236,7 @@ void SCTPThread::run() {
   linfo << "Shutting down. SCTP Transmission Summary: TX: " << m_txCount << " RX: " << m_rxCount << std::endl;
   m_connected = false;
   close(m_socket);
-  if (m_role == SERVER) {
+  if (m_role == SCTP_SERVER) {
     close(m_serverSocket);
   }
 }

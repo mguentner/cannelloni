@@ -29,7 +29,7 @@ namespace cannelloni {
 #define SCTP_HEADER_SIZE 12
 #define SCTP_PAYLOAD_SIZE ETHERNET_MTU-IP_HEADER_SIZE-SCTP_HEADER_SIZE
 
-enum SCTPThreadRole {SERVER, CLIENT};
+enum SCTPThreadRole {SCTP_SERVER, SCTP_CLIENT};
 
 class SCTPThread : public UDPThread {
   public:

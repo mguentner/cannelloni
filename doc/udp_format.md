@@ -1,6 +1,6 @@
-#cannelloni UDP/SCTP Format version 2
+# cannelloni UDP/SCTP Format version 2
 
-##Data Frames
+## Data Frames
 
 Each data frame can contain several CAN frames.
 
@@ -32,7 +32,7 @@ Everything is Big-Endian/Network Byte Order.
 
 *The frame format is identical for UDP and SCTP*
 
-##CAN FD
+## CAN FD
 
 CAN FD frames are marked with the MSB of `len` being
 set, so `len | (0x80)`. If this bit is set, the `flags`

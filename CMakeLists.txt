@@ -47,10 +47,14 @@ add_library(addsources STATIC
             thread.cpp
             timer.cpp
             udpthread.cpp
+            tcpthread.cpp
+            tcp_client_thread.cpp
+            tcp_server_thread.cpp
             canthread.cpp)
 
 add_library(cannelloni-common SHARED
-            parser.cpp)
+            parser.cpp
+            decoder.cpp)
 
 set_target_properties ( cannelloni-common
   PROPERTIES
