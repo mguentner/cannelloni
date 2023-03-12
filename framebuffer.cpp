@@ -220,13 +220,9 @@ void FrameBuffer::clearPool() {
   std::unique_lock<std::recursive_mutex> lock3(m_intermediateBufferMutex, std::defer_lock);
   std::lock(lock1, lock2, lock3);
 
+  reset();
+
   for (canfd_frame *f : m_framePool) {
-    delete f;
-  }
-  for (canfd_frame *f : m_intermediateBuffer) {
-    delete f;
-  }
-  for (canfd_frame *f : m_buffer) {
     delete f;
   }
   m_framePool.clear();
