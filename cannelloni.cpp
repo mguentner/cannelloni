@@ -33,7 +33,9 @@
 #include <sys/signalfd.h>
 
 #include "config.h"
+#include "connection.h"
 #include "udpthread.h"
+#include "tcpthread.h"
 
 #ifdef SCTP_SUPPORT
 #include "sctpthread.h"
@@ -55,13 +57,17 @@ void printUsage() {
   std::cout << "Usage: cannelloni OPTIONS" << std::endl;
   std::cout << "Available options:" << std::endl;
 #ifdef SCTP_SUPPORT
-  std::cout << "\t -S ROLE \t\t enable SCTP transport." << std::endl;
+  std::cout << "\t -S [cs] \t\t enable SCTP transport." << std::endl;
   std::cout << "\t\t\t c : act as client" << std::endl;
   std::cout << "\t\t\t s : act as server" << std::endl;
 #endif
+  std::cout << "\t -C [cs] \t\t enable TCP transport." << std::endl;
+  std::cout << "\t\t\t c : act as client" << std::endl;
+  std::cout << "\t\t\t s : act as server" << std::endl;
   std::cout << "\t -l PORT \t\t listening port, default: 20000" << std::endl;
   std::cout << "\t -L IP   \t\t listening IP, default: 0.0.0.0" << std::endl;
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
+  std::cout << "\t -R IP   \t\t remote IP (mandatory for UDP), default: 127.0.0.1" << std::endl;
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
@@ -70,15 +76,13 @@ void printUsage() {
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
   std::cout << "\t\t\t c : enable debugging of can frames" << std::endl;
 #ifdef SCTP_SUPPORT
-  std::cout << "\t\t\t u : enable debugging of udp/sctp frames" << std::endl;
+  std::cout << "\t\t\t u : enable debugging of udp/tcp/sctp frames" << std::endl;
 #else
-  std::cout << "\t\t\t u : enable debugging of udp frames" << std::endl;
+  std::cout << "\t\t\t u : enable debugging of udp/tcp frames" << std::endl;
 #endif
   std::cout << "\t\t\t b : enable debugging of internal buffer structures" << std::endl;
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
-  std::cout << "Mandatory options:" << std::endl;
-  std::cout << "\t -R IP   \t\t remote IP" << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -86,9 +90,11 @@ int main(int argc, char** argv) {
   bool remoteIPSupplied = false;
   bool sortUDP = false;
   bool checkPeer = true;
+  bool useTCP = false;
   bool useSCTP = false;
+  TCPThreadRole tcpRole = TCP_CLIENT;
 #ifdef SCTP_SUPPORT
-  SCTPThreadRole sctpRole = CLIENT;
+  SCTPThreadRole sctpRole = SCTP_CLIENT;
 #endif
   char remoteIP[INET_ADDRSTRLEN] = "127.0.0.1";
   uint16_t remotePort = 20000;
@@ -103,24 +109,43 @@ int main(int argc, char** argv) {
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
 #ifdef SCTP_SUPPORT
-  const std::string argument_options = "S:l:L:r:R:I:t:T:d:hsp";
+  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:hsp";
 #else
-  const std::string argument_options = "Sl:L:r:R:I:t:T:d:hsp";
+  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:hsp";
 #endif
 
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
     switch(opt) {
+      case 'C':
+        switch (optarg[0]) {
+          case 's':
+          case 'S':
+            tcpRole = TCP_SERVER;
+            useTCP = true;
+            break;
+          case 'c':
+          case 'C':
+            tcpRole = TCP_CLIENT;
+            useTCP = true;
+            break;
+          default:
+            std::cout << "Usage Error: " << std::endl
+                      << "-C only accepts [s]erver or [c]lient" << std::endl;
+            printUsage();
+            return -1;
+        }
+        break;
 #ifdef SCTP_SUPPORT
       case 'S':
         switch (optarg[0]) {
           case 's':
           case 'S':
-            sctpRole = SERVER;
+            sctpRole = SCTP_SERVER;
             useSCTP = true;
             break;
           case 'c':
           case 'C':
-            sctpRole = CLIENT;
+            sctpRole = SCTP_CLIENT;
             useSCTP = true;
             break;
           default:
@@ -186,24 +211,20 @@ int main(int argc, char** argv) {
         return -1;
     }
   }
-#ifdef SCTP_SUPPORT
-  if (!remoteIPSupplied && !(useSCTP && sctpRole == SERVER)) {
-
+  if (useTCP && useSCTP) {
+    std::cout << "Usage Error: " << std::endl
+              << "Can't use TCP and SCTP simultaneously" << std::endl
+                                          << std::endl;
+    printUsage();
+    return -1;
+  }
+  if (!remoteIPSupplied && !useSCTP && !useTCP) {
     std::cout << "Usage Error: " << std::endl
               << "Remote IP not supplied" << std::endl
                                           << std::endl;
     printUsage();
     return -1;
   }
-#else
-  if (!remoteIPSupplied) {
-    std::cout << "Usage Error: " << std::endl
-              << "Remote IP not supplied" << std::endl
-                                          << std::endl;
-    printUsage();
-    return -1;
-  }
-#endif
   if (bufferTimeout == 0) {
     std::cout << "Usage Error: " << std::endl
               << "Only non-zero timeouts are allowed" << std::endl
@@ -280,23 +301,31 @@ int main(int argc, char** argv) {
   localAddr.sin_port = htons(localPort);
   inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
-  std::unique_ptr<UDPThread> netThread;
-  if (useSCTP) {
+  std::unique_ptr<ConnectionThread> netThread;
+  if (useTCP && tcpRole == TCP_SERVER) {
+    netThread = std::make_unique<TCPServerThread>(debugOptions, remoteAddr, localAddr, remoteIPSupplied);
+  } else if (useTCP && tcpRole == TCP_CLIENT) {
+    netThread = std::make_unique<TCPClientThread>(debugOptions, remoteAddr, localAddr);
+  } else if (useSCTP) {
 #ifdef SCTP_SUPPORT
-    netThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
+    auto sctpThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
+    sctpThread.get()->setTimeout(bufferTimeout);
+    sctpThread.get()->setTimeoutTable(timeoutTable);
+    netThread = std::move(sctpThread);
 #endif
   } else {
-    netThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, sortUDP, checkPeer);
+    auto udpThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, sortUDP, checkPeer);
+    udpThread.get()->setTimeout(bufferTimeout);
+    udpThread.get()->setTimeoutTable(timeoutTable);
+    netThread = std::move(udpThread);
   }
   auto canThread = std::make_unique<CANThread>(debugOptions, canInterface);
   auto netFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
   auto canFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
   netThread->setPeerThread(canThread.get());
   netThread->setFrameBuffer(netFrameBuffer.get());
-  netThread->setTimeoutTable(timeoutTable);
   canThread->setPeerThread(netThread.get());
   canThread->setFrameBuffer(canFrameBuffer.get());
-  netThread->setTimeout(bufferTimeout);
   int netStartReturn = netThread->start();
   int canStartReturn = canThread->start();
   while (1 && netStartReturn == 0 && canStartReturn == 0) {

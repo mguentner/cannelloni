@@ -4,6 +4,7 @@
 #include "cannelloni.h"
 
 #include <linux/can.h>
+#include <sys/types.h>
 
 #include <functional>
 #include <list>
@@ -31,18 +32,31 @@ void parseFrames(uint16_t len, const uint8_t* buffer,
         std::function<void(canfd_frame*, bool)> frameReceiver);
 
 /**
+ * Encodes a CAN frame into its binary data format.
+ *
+ * @param data Pointer to the data buffer where the encoded frame will be
+ stored.
+ * @param frame Pointer to the CAN frame structure to encode.
+ *
+ * @return The size of the encoded frame.
+ */
+size_t encodeFrame(uint8_t *data, canfd_frame *frame);
+
+/**
  * Builds Cannelloni packet from provided list of CAN frames
  * @param len Buffer length
  * @param packetBuffer Pointer to buffer that will contain Cannelloni packet
  * @param frames Reference to list of pointers to CAN frames
  * @param seqNo Packet sequence number
- * @param handleOverflow Callback responsible for handling CAN frames that did't fit
- *  into Cannelloni package. First argument is a frames list reference, second argument
- *  is iterator to the first not handled frame.
+ * @param handleOverflow Callback responsible for handling CAN frames that
+ * did't fit into Cannelloni package. First argument is a frames list
+ * reference, second argument is iterator to the first not handled frame.
  * @return
  */
-uint8_t* buildPacket(uint16_t len, uint8_t* packetBuffer,
-        std::list<canfd_frame*>& frames, uint8_t seqNo,
-        std::function<void(std::list<canfd_frame*>&, std::list<canfd_frame*>::iterator)> handleOverflow);
+uint8_t *buildPacket(uint16_t len, uint8_t *packetBuffer,
+                         std::list<canfd_frame *> &frames, uint8_t seqNo,
+                         std::function<void(std::list<canfd_frame *> &,
+                                            std::list<canfd_frame *>::iterator)>
+                             handleOverflow);
 
 #endif /* PARSER_H_ */

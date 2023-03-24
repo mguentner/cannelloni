@@ -14,6 +14,7 @@ Features:
 - easy debugging
 - CAN FD support on interfaces that support it
 - UDP support (fast, unreliable transport)
+- TCP support (reliable transport)
 - SCTP support (optional, reliable transport)
 
 # Important Usage Notice
@@ -107,6 +108,9 @@ what is wrong.
 
 ### Timeouts
 
+*UDP + SCTP only!*
+
+
 cannelloni either sends a full UDP frame or all CAN frames that
 are queued when the timeout that has been specified by the `-t` option
 has been reached.
@@ -198,6 +202,23 @@ If there is no remote IP supplied to the server instance, every client
 (any IP) will be accepted. Only one client can be connected at a time.
 After the client disconnects, the server waits for a new client.
 
+## TCP
+
+Usage example:
+
+IP: 192.168.0.2 (Server)
+```
+cannelloni -I vcan0 -C s
+```
+
+IP: 192.168.0.3 (Client)
+```
+cannelloni -I vcan0 -C c -R 192.168.0.2
+```
+
+With TCP, no frame buffer is used an frames are immediately transmitted,
+frame sorting and timeouts do not apply here.
+
 # Frame sorting
 
 CAN frames can be sorted by their ID in each ethernet frame to write
@@ -222,7 +243,7 @@ for your work.
 
 # License
 
-Copyright 2014-2019 Maximilian Güntner <code@mguentner.de>
+Copyright 2014-2023 Maximilian Güntner <code@mguentner.de>
 
 cannelloni is licensed under the GPL, version 2. See gpl-2.0.txt for
 more information.
