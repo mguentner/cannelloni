@@ -226,6 +226,55 @@ high priority frames first on the receiving CAN bus.
 
 This can be achieved by supplying the `-s` option.
 
+# Filtering
+
+cannelloni does not support filtering, if however you want to only bridge a
+certain set of CAN IDs, you can first forward the frames of interest to virtual CAN
+interface. From there you will send using cannelloni.
+
+This can be achieved with `cangw` which is part of (can-utils)[https://github.com/linux-can/can-utils/] and its respective
+kernel module is also present in upstream Linux.
+
+Let's look at an example where currently `can0` is sent to a remote machine:
+
+```
+cannelloni -I can0 -R 192.168.0.3 -r 12000
+```
+
+Let's say you want to only receive CAN frames with the ID `0x042` at the remote machine.
+First, load two kernel modules, `can_gw` and `vcan`:
+
+```
+modprobe vcan
+modprobe can_gw
+```
+
+Now, start a virtual CAN bus:
+
+```
+ip link add name vcan0 type vcan
+ip link set dev vcan0 up mtu 16
+```
+
+Add a rule to the gateway that will forward frames with IDs that match `0x042 & 0xC00007F0`. Note that
+the bitmask accounts for the type `can_id` which is 4 bytes long.
+
+```
+cangw -A -s can0 -d vcan0 -f 042:C00007FF -e
+```
+
+If you start candump now on `vcan0`, you should only see frames with ID `0x042`.
+Now change the cannelloni command to
+
+```
+cannelloni -I vcan0 -R 192.168.0.3 -r 12000
+```
+
+Now you should see those `0x042` frames also at the remote machine.
+
+If you want to also send frames from the remote to your original `can0`, you need
+to add a rule for that as well!
+
 # Paper
 
 cannelloni was discussed in the paper *Mapping CAN-to-Ethernet communication channels within virtualized embedded environments* on
