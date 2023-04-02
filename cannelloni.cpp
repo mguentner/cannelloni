@@ -1,7 +1,7 @@
 /*
  * This file is part of cannelloni, a SocketCAN over Ethernet tunnel.
  *
- * Copyright (C) 2014-2017 Maximilian Güntner <code@sourcediver.org>
+ * Copyright (C) 2014-2023 Maximilian Güntner <code@mguentner.de>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 as
@@ -48,7 +48,7 @@
 #include "make_unique.h"
 #include <memory>
 
-#define CANNELLONI_VERSION "1.0.1"
+#define CANNELLONI_VERSION "1.1.0"
 
 using namespace cannelloni;
 
