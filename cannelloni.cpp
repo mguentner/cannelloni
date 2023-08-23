@@ -34,6 +34,7 @@
 
 #include "config.h"
 #include "connection.h"
+#include "inet_address.h"
 #include "udpthread.h"
 #include "tcpthread.h"
 
@@ -65,9 +66,9 @@ void printUsage() {
   std::cout << "\t\t\t c : act as client" << std::endl;
   std::cout << "\t\t\t s : act as server" << std::endl;
   std::cout << "\t -l PORT \t\t listening port, default: 20000" << std::endl;
-  std::cout << "\t -L IP   \t\t listening IP, default: 0.0.0.0" << std::endl;
+  std::cout << "\t -L ADDRESS \t\t listening ADDRESS, default: 0.0.0.0" << std::endl;
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
-  std::cout << "\t -R IP   \t\t remote IP (mandatory for UDP), default: 127.0.0.1" << std::endl;
+  std::cout << "\t -R ADDRESS \t\t remote ADDRESS (mandatory for UDP), default: 127.0.0.1" << std::endl;
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
@@ -293,13 +294,18 @@ int main(int argc, char** argv) {
   bzero(&remoteAddr, sizeof(sockaddr_in));
   bzero(&localAddr, sizeof(sockaddr_in));
 
-  remoteAddr.sin_family = AF_INET;
-  remoteAddr.sin_port = htons(remotePort);
-  inet_pton(AF_INET, remoteIP, &remoteAddr.sin_addr);
 
-  localAddr.sin_family = AF_INET;
+  if (!parseAddress(remoteIP, remoteAddr)) {
+    lerror << "Invalid remote address";
+    return -1;
+  }
+  remoteAddr.sin_port = htons(remotePort);
+
+  if (!parseAddress(localIP, localAddr)) {
+    lerror << "Invalid listen address";
+    return -1;
+  }
   localAddr.sin_port = htons(localPort);
-  inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
   std::unique_ptr<ConnectionThread> netThread;
   if (useTCP && tcpRole == TCP_SERVER) {
