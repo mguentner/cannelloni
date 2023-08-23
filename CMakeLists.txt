@@ -44,6 +44,7 @@ add_executable(cannelloni cannelloni.cpp)
 add_library(addsources STATIC
             connection.cpp
             framebuffer.cpp
+            inet_address.cpp
             thread.cpp
             timer.cpp
             udpthread.cpp

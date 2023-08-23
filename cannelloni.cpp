@@ -34,6 +34,7 @@
 
 #include "config.h"
 #include "connection.h"
+#include "inet_address.h"
 #include "udpthread.h"
 #include "tcpthread.h"
 
@@ -293,13 +294,18 @@ int main(int argc, char** argv) {
   bzero(&remoteAddr, sizeof(sockaddr_in));
   bzero(&localAddr, sizeof(sockaddr_in));
 
-  remoteAddr.sin_family = AF_INET;
-  remoteAddr.sin_port = htons(remotePort);
-  inet_pton(AF_INET, remoteIP, &remoteAddr.sin_addr);
 
-  localAddr.sin_family = AF_INET;
+  if (!parseAddress(remoteIP, remoteAddr)) {
+    lerror << "Invalid remote address";
+    return -1;
+  }
+  remoteAddr.sin_port = htons(remotePort);
+
+  if (!parseAddress(localIP, localAddr)) {
+    lerror << "Invalid listen address";
+    return -1;
+  }
   localAddr.sin_port = htons(localPort);
-  inet_pton(AF_INET, localIP, &localAddr.sin_addr);
 
   std::unique_ptr<ConnectionThread> netThread;
   if (useTCP && tcpRole == TCP_SERVER) {
