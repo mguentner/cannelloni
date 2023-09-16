@@ -18,34 +18,35 @@
  *
  */
 
+#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include <iomanip>
 
+#include <arpa/inet.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 
 #include <sys/signalfd.h>
 
 #include "config.h"
 #include "connection.h"
 #include "inet_address.h"
-#include "udpthread.h"
 #include "tcpthread.h"
+#include "udpthread.h"
 
 #ifdef SCTP_SUPPORT
 #include "sctpthread.h"
 #endif
 
 #include "canthread.h"
+#include "csvmapparser.h"
 #include "framebuffer.h"
 #include "logging.h"
-#include "csvmapparser.h"
 #include "make_unique.h"
 #include <memory>
 
@@ -83,25 +84,29 @@ void printUsage() {
 #endif
   std::cout << "\t\t\t b : enable debugging of internal buffer structures" << std::endl;
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
+  std::cout << "\t -4 : use IPv4 (default)" << std::endl;
+  std::cout << "\t -6 : use IPv6" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int opt;
   bool remoteIPSupplied = false;
   bool sortUDP = false;
   bool checkPeer = true;
   bool useTCP = false;
   bool useSCTP = false;
+  bool useIPv4 = true;
+  bool useIPv6 = false;
   TCPThreadRole tcpRole = TCP_CLIENT;
 #ifdef SCTP_SUPPORT
   SCTPThreadRole sctpRole = SCTP_CLIENT;
 #endif
-  char remoteIP[INET_ADDRSTRLEN] = "127.0.0.1";
+  char remoteIP[INET6_ADDRSTRLEN] = "";
   uint16_t remotePort = 20000;
-  char localIP[INET_ADDRSTRLEN] = "0.0.0.0";
+  char localIP[INET6_ADDRSTRLEN] = "";
   uint16_t localPort = 20000;
-  std::string canInterface = "vcan0";
+  std::string canInterfaceName = "vcan0";
   uint32_t bufferTimeout = 100000;
   std::string timeoutTableFile;
   /* Key is CAN ID, Value is timeout in us */
@@ -110,9 +115,9 @@ int main(int argc, char** argv) {
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
 #ifdef SCTP_SUPPORT
-  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:hsp";
+  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:hsp46";
 #else
-  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:hsp";
+  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:hsp46";
 #endif
 
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
@@ -168,19 +173,19 @@ int main(int argc, char** argv) {
         localPort = strtoul(optarg, NULL, 10);
         break;
       case 'L':
-        strncpy(localIP, optarg, INET_ADDRSTRLEN-1);
-        localIP[INET_ADDRSTRLEN-1] = '\0';
+        strncpy(localIP, optarg, INET6_ADDRSTRLEN-1);
+        localIP[INET6_ADDRSTRLEN-1] = '\0';
         break;
       case 'r':
         remotePort = strtoul(optarg, NULL, 10);
         break;
       case 'R':
-        strncpy(remoteIP, optarg, INET_ADDRSTRLEN-1);
-        remoteIP[INET_ADDRSTRLEN-1] = '\0';
+        strncpy(remoteIP, optarg, INET6_ADDRSTRLEN-1);
+        remoteIP[INET6_ADDRSTRLEN-1] = '\0';
         remoteIPSupplied = true;
         break;
       case 'I':
-        canInterface = std::string(optarg);
+        canInterfaceName = std::string(optarg);
         break;
       case 't':
         bufferTimeout = strtoul(optarg, NULL, 10);
@@ -207,11 +212,26 @@ int main(int argc, char** argv) {
       case 'p':
         checkPeer = false;
         break;
+      case '4':
+        useIPv4 = true;
+        break;
+      case '6':
+        useIPv6 = true;
+        useIPv4 = false;
+        break;
       default:
         printUsage();
         return -1;
     }
   }
+  if (useIPv4 && useIPv6) {
+    std::cout << "Usage Error: " << std::endl
+              << "Can't use IPv4 and IPv6 simultaneously" << std::endl
+              << std::endl;
+    printUsage();
+    return -1;
+  }
+
   if (useTCP && useSCTP) {
     std::cout << "Usage Error: " << std::endl
               << "Can't use TCP and SCTP simultaneously" << std::endl
@@ -222,16 +242,25 @@ int main(int argc, char** argv) {
   if (!remoteIPSupplied && !useSCTP && !useTCP) {
     std::cout << "Usage Error: " << std::endl
               << "Remote IP not supplied" << std::endl
-                                          << std::endl;
+              << std::endl;
     printUsage();
     return -1;
   }
   if (bufferTimeout == 0) {
     std::cout << "Usage Error: " << std::endl
               << "Only non-zero timeouts are allowed" << std::endl
-                                                      << std::endl;
+              << std::endl;
     printUsage();
     return -1;
+  }
+
+  // set default values if no IPs have been provided
+  if (strlen(localIP) == 0) {
+    if (useIPv4) {
+      strcpy(localIP, "0.0.0.0");
+    } else {
+      strcpy(localIP, "::");
+    }
   }
 
   if (!timeoutTableFile.empty()) {
@@ -267,8 +296,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  struct sockaddr_in remoteAddr;
-  struct sockaddr_in localAddr;
+  struct sockaddr_storage remoteAddr;
+  struct sockaddr_storage localAddr;
   /* We use the signalfd() system call to create a
    * file descriptor to receive signals */
   sigset_t signalMask;
@@ -291,41 +320,51 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  bzero(&remoteAddr, sizeof(sockaddr_in));
-  bzero(&localAddr, sizeof(sockaddr_in));
+  memset(&remoteAddr, 0, sizeof(sockaddr_storage));
+  memset(&localAddr, 0, sizeof(sockaddr_storage));
 
+  int address_family = AF_INET;
+  if (useIPv6) {
+    address_family = AF_INET6;
+  }
 
-  if (!parseAddress(remoteIP, remoteAddr)) {
+  if (remoteIPSupplied && !parseAddress(remoteIP, (struct sockaddr *) &remoteAddr, address_family)) {
     lerror << "Invalid remote address";
     return -1;
   }
-  remoteAddr.sin_port = htons(remotePort);
 
-  if (!parseAddress(localIP, localAddr)) {
+  if (!parseAddress(localIP, (struct sockaddr *) &localAddr, address_family)) {
     lerror << "Invalid listen address";
     return -1;
   }
-  localAddr.sin_port = htons(localPort);
+
+  if (address_family == AF_INET) {
+    ((struct sockaddr_in *) &remoteAddr)->sin_port = htons(remotePort);
+    ((struct sockaddr_in *) &localAddr)->sin_port = htons(localPort);
+  } else if (address_family == AF_INET6) {
+    ((struct sockaddr_in6 *) &remoteAddr)->sin6_port = htons(remotePort);
+    ((struct sockaddr_in6 *) &localAddr)->sin6_port = htons(localPort);
+  }
 
   std::unique_ptr<ConnectionThread> netThread;
   if (useTCP && tcpRole == TCP_SERVER) {
-    netThread = std::make_unique<TCPServerThread>(debugOptions, remoteAddr, localAddr, remoteIPSupplied);
+    netThread = std::make_unique<TCPServerThread>(debugOptions, remoteAddr, localAddr, address_family, remoteIPSupplied);
   } else if (useTCP && tcpRole == TCP_CLIENT) {
-    netThread = std::make_unique<TCPClientThread>(debugOptions, remoteAddr, localAddr);
+    netThread = std::make_unique<TCPClientThread>(debugOptions, remoteAddr, localAddr, address_family);
   } else if (useSCTP) {
 #ifdef SCTP_SUPPORT
-    auto sctpThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, sortUDP, remoteIPSupplied, sctpRole);
+    auto sctpThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, address_family, sortUDP, remoteIPSupplied, sctpRole);
     sctpThread.get()->setTimeout(bufferTimeout);
     sctpThread.get()->setTimeoutTable(timeoutTable);
     netThread = std::move(sctpThread);
 #endif
   } else {
-    auto udpThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, sortUDP, checkPeer);
+    auto udpThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, address_family, sortUDP, checkPeer);
     udpThread.get()->setTimeout(bufferTimeout);
     udpThread.get()->setTimeoutTable(timeoutTable);
     netThread = std::move(udpThread);
   }
-  auto canThread = std::make_unique<CANThread>(debugOptions, canInterface);
+  auto canThread = std::make_unique<CANThread>(debugOptions, canInterfaceName);
   auto netFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
   auto canFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
   netThread->setPeerThread(canThread.get());

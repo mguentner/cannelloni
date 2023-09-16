@@ -22,6 +22,7 @@
 
 #include "udpthread.h"
 #include <netinet/sctp.h>
+#include <sys/socket.h>
 
 namespace cannelloni {
 
@@ -34,8 +35,9 @@ enum SCTPThreadRole {SCTP_SERVER, SCTP_CLIENT};
 class SCTPThread : public UDPThread {
   public:
     SCTPThread(const struct debugOptions_t &debugOptions,
-               const struct sockaddr_in &remoteAddr,
-               const struct sockaddr_in &localAddr,
+               const struct sockaddr_storage &remoteAddr,
+               const struct sockaddr_storage &localAddr,
+               int address_family,
                bool sort,
                bool checkPeer,
                SCTPThreadRole role);
@@ -51,11 +53,11 @@ class SCTPThread : public UDPThread {
     bool isConnected();
 
   private:
-    bool m_checkPeerConnect;
-    int m_serverSocket;
     sctp_assoc_t m_assoc_id;
-    bool m_connected;
     SCTPThreadRole m_role;
+    bool m_checkPeerConnect;
+    bool m_connected;
+    int m_serverSocket;
 };
 
 }

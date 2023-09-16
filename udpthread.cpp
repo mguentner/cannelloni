@@ -18,6 +18,8 @@
  *
  */
 
+#include <cstdint>
+#include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -36,20 +38,23 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 
+#include "inet_address.h"
 #include "udpthread.h"
 #include "logging.h"
 #include "make_unique.h"
 #include "parser.h"
 
 UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
-                     const struct sockaddr_in &remoteAddr,
-                     const struct sockaddr_in &localAddr,
+                     const struct sockaddr_storage &remoteAddr,
+                     const struct sockaddr_storage &localAddr,
+                     int address_family,
                      bool sort,
                      bool checkPeer)
   : ConnectionThread()
   , m_sort(sort)
   , m_checkPeer(checkPeer)
   , m_socket(0)
+  , m_address_family(address_family)
   , m_sequenceNumber(0)
   , m_timeout(100)
   , m_rxCount(0)
@@ -57,13 +62,13 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
   , m_payloadSize(UDP_PAYLOAD_SIZE)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
-  memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_in));
-  memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_in));
+  memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_storage));
+  memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_storage));
 }
 
 int UDPThread::start() {
   /* Setup our connection */
-  m_socket = socket(AF_INET, SOCK_DGRAM, 0);
+  m_socket = socket(m_address_family, SOCK_DGRAM, 0);
   if (m_socket < 0) {
     lerror << "socket Error" << std::endl;
     return -1;
@@ -92,54 +97,43 @@ void UDPThread::stop() {
   m_blockTimer.fire();
 }
 
-
-
-bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_in &clientAddr) {
-  char clientAddrStr[INET_ADDRSTRLEN];
-
-  if (inet_ntop(AF_INET, &clientAddr.sin_addr, clientAddrStr, INET_ADDRSTRLEN) == NULL) {
-    lwarn << "Could not convert client address" << std::endl;
+bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_storage *clientAddr) {
+  if ((m_address_family == AF_INET && (memcmp(&((struct sockaddr_in *) clientAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0) && m_checkPeer) ||
+      (m_address_family == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) clientAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0) && m_checkPeer)) {
+    lwarn << "Got a connection attempt from " << formatSocketAddress(getSocketAddress(clientAddr))
+          << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
     return false;
-  } else {
-    if ((memcmp(&(clientAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) && m_checkPeer) {
-      lwarn << "Received a packet from " << clientAddrStr
-            << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
-    } else {
+  }
+  if (m_debugOptions.udp) {
+    linfo << "Received " << std::dec << len << " Bytes from Host " << formatSocketAddress(getSocketAddress(clientAddr)) << std::endl;
+  }
+  auto allocator = [this]()
+  {
+      return m_peerThread->getFrameBuffer()->requestFrame(true, m_debugOptions.buffer);
+  };
+  auto receiver = [this](canfd_frame* f, bool success)
+  {
+      if (!success)
+      {
+          m_peerThread->getFrameBuffer()->insertFramePool(f);
+          return;
+      }
 
-        if (m_debugOptions.udp) {
-            linfo << "Received " << std::dec << len << " Bytes from Host " << clientAddrStr
-                    << ":" << ntohs(clientAddr.sin_port) << std::endl;
-        }
-
-        auto allocator = [this]()
-        {
-            return m_peerThread->getFrameBuffer()->requestFrame(true, m_debugOptions.buffer);
-        };
-        auto receiver = [this](canfd_frame* f, bool success)
-        {
-            if (!success)
-            {
-                m_peerThread->getFrameBuffer()->insertFramePool(f);
-                return;
-            }
-
-            m_peerThread->transmitFrame(f);
-            if (m_debugOptions.can)
-            {
-                printCANInfo(f);
-            }
-        };
-        try
-        {
-            parseFrames(len, buffer, allocator, receiver);
-            m_rxCount++;
-        }
-        catch(std::exception& e)
-        {
-            lerror << e.what();
-            return true;
-        }
-    }
+      m_peerThread->transmitFrame(f);
+      if (m_debugOptions.can)
+      {
+          printCANInfo(f);
+      }
+  };
+  try
+  {
+      parseFrames(len, buffer, allocator, receiver);
+      m_rxCount++;
+  }
+  catch(std::exception& e)
+  {
+      lerror << e.what();
+      return true;
   }
   return false;
 }
@@ -148,8 +142,8 @@ void UDPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
   uint8_t buffer[RECEIVE_BUFFER_SIZE];
-  struct sockaddr_in clientAddr;
-  socklen_t clientAddrLen = sizeof(struct sockaddr_in);
+  struct sockaddr_storage clientAddr;
+  socklen_t clientAddrLen = sizeof(clientAddr);
 
   /* Set interval to m_timeout */
   m_transmitTimer.adjust(m_timeout, m_timeout);
@@ -185,12 +179,12 @@ void UDPThread::run() {
       /* Clear buffer */
       memset(buffer, 0, RECEIVE_BUFFER_SIZE);
       receivedBytes = recvfrom(m_socket, buffer, RECEIVE_BUFFER_SIZE,
-          0, (struct sockaddr *) &clientAddr, &clientAddrLen);
+          0, (struct sockaddr *)&clientAddr, &clientAddrLen);
       if (receivedBytes < 0) {
         lerror << "recvfrom error." << std::endl;
         continue;
       } else if (receivedBytes > 0) {
-        parsePacket(buffer, receivedBytes, clientAddr);
+        parsePacket(buffer, receivedBytes, &clientAddr);
       }
     }
   }

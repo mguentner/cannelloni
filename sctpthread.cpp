@@ -22,9 +22,11 @@
 #include <cstdio>
 #include <algorithm>
 
+#include <netinet/in.h>
 #include <string.h>
 
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <errno.h>
 
@@ -40,16 +42,18 @@
 
 #include <netinet/sctp.h>
 
+#include "inet_address.h"
 #include "logging.h"
 #include "sctpthread.h"
 
 SCTPThread::SCTPThread(const struct debugOptions_t &debugOptions,
-                       const struct sockaddr_in &remoteAddr,
-                       const struct sockaddr_in &localAddr,
+                       const struct sockaddr_storage &remoteAddr,
+                       const struct sockaddr_storage &localAddr,
+                       int address_family,
                        bool sort,
                        bool checkPeer,
                        SCTPThreadRole role)
-  : UDPThread(debugOptions, remoteAddr, localAddr, sort, checkPeer)
+  : UDPThread(debugOptions, remoteAddr, localAddr, address_family, sort, checkPeer)
   , m_assoc_id(0)
   , m_role(role)
   , m_checkPeerConnect(checkPeer)
@@ -65,7 +69,7 @@ int SCTPThread::start() {
    * instead of SOCK_SEQPACKET
    */
   if (m_role == SCTP_SERVER) {
-    m_serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+    m_serverSocket = socket(m_address_family, SOCK_STREAM, IPPROTO_SCTP);
     if (m_serverSocket < 0) {
       lerror << "socket error" << std::endl;
       return -1;
@@ -88,8 +92,8 @@ void SCTPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
   uint8_t buffer[RECEIVE_BUFFER_SIZE];
-  struct sockaddr_in clientAddr;
-  socklen_t clientAddrLen = sizeof(struct sockaddr_in);
+  struct sockaddr_storage clientAddr;
+  socklen_t clientAddrLen = sizeof(struct sockaddr_storage);
 
   /* Set interval to m_timeout */
   m_transmitTimer.adjust(m_timeout, m_timeout);
@@ -98,8 +102,7 @@ void SCTPThread::run() {
   while (m_started) {
     if (!m_connected) {
       if (m_role == SCTP_SERVER) {
-        struct sockaddr_in connAddr;
-        char connAddrStr[INET_ADDRSTRLEN];
+        struct sockaddr_storage connAddr;
         socklen_t connAddrLen = sizeof(connAddr);
         fd_set readfds;
         struct timeval timeout;
@@ -128,26 +131,22 @@ void SCTPThread::run() {
           lerror << "Error while accepting." << std::endl;
           continue;
         }
-        if (inet_ntop(AF_INET, &connAddr.sin_addr, connAddrStr, INET_ADDRSTRLEN) == NULL) {
-          lwarn << "Could not convert client address" << std::endl;
-          close(m_socket);
-          continue;
-        }
         /*
          * We have a connection, now check whether it matches the one
          * the user specified as the peer unless m_checkPeerConnect is false
          */
         if (m_checkPeerConnect) {
-          if (memcmp(&(connAddr.sin_addr), &(m_remoteAddr.sin_addr), sizeof(struct in_addr)) != 0) {
-            lwarn << "Got a connection from " << connAddrStr
-                  << ", which is not set as a remote." << std::endl;
+          if ((m_address_family == AF_INET && (memcmp(&((struct sockaddr_in *) &connAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0)) || 
+              (m_address_family == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) &connAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0))) {
+            lwarn << "Got a connection attempt from " << formatSocketAddress(getSocketAddress(&connAddr))
+                  << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
             close(m_socket);
             /* Wait here for some time */
             std::this_thread::sleep_for(std::chrono::seconds(2));
             continue;
           }
         }
-        linfo << "Got a connection from " << connAddrStr << std::endl;
+        linfo << "Got a connection from " << formatSocketAddress(getSocketAddress(&connAddr)) << std::endl;
         /* At this point we have a valid connection */
         m_connected = true;
         /* Clear the old entries in frameBuffer */
@@ -157,8 +156,9 @@ void SCTPThread::run() {
           lerror << "Could not disable Nagle." << std::endl;
         }
       } else {
+        // SCTP_CLIENT
         const int nagle = 0;
-        m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+        m_socket = socket(m_address_family, SOCK_STREAM, IPPROTO_SCTP);
         if (m_socket < 0) {
           lerror << "socket error" << std::endl;
           continue;
@@ -209,7 +209,7 @@ void SCTPThread::run() {
       if (FD_ISSET(m_socket, &readfds)) {
         struct sctp_sndrcvinfo sinfo;
         int flags = 0;
-        bzero(&sinfo, sizeof(sinfo));
+        memset(&sinfo, 0, sizeof(sinfo));
         /* Clear buffer */
         memset(buffer, 0, RECEIVE_BUFFER_SIZE);
         receivedBytes = sctp_recvmsg(m_socket, buffer, RECEIVE_BUFFER_SIZE,
@@ -221,7 +221,7 @@ void SCTPThread::run() {
           close(m_socket);
           continue;
         } else if (receivedBytes > 0) {
-          parsePacket(buffer, receivedBytes, clientAddr);
+          parsePacket(buffer, receivedBytes, &clientAddr);
         } else {
           m_connected  = false;
           close(m_socket);
@@ -255,7 +255,7 @@ void SCTPThread::transmitFrame(canfd_frame *frame) {
 
 ssize_t SCTPThread::sendBuffer(uint8_t *buffer, uint16_t len) {
   struct sctp_sndrcvinfo sinfo;
-  bzero(&sinfo, sizeof(sinfo));
+  memset(&sinfo, 0, sizeof(sinfo));
   sinfo.sinfo_stream = 0;
   sinfo.sinfo_assoc_id = m_assoc_id;
   return sctp_send(m_socket, buffer, len, &sinfo, 0);

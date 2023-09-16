@@ -18,23 +18,28 @@
  *
  */
 
+#include "inet_address.h"
 #include "logging.h"
 #include "tcpthread.h"
 #include <arpa/inet.h>
+#include <cstdint>
 #include <cstring>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 using namespace cannelloni;
 
 TCPClientThread::TCPClientThread(const struct debugOptions_t &debugOptions,
-                                 const struct sockaddr_in &remoteAddr,
-                                 const struct sockaddr_in &localAddr)
-  : TCPThread(debugOptions, remoteAddr, localAddr)
+                                 const struct sockaddr_storage &remoteAddr,
+                                 const struct sockaddr_storage &localAddr,
+                                 int address_family)
+  : TCPThread(debugOptions, remoteAddr, localAddr, address_family)
 {
 }
 
 bool TCPClientThread::attempt_connect() {
-  m_socket = socket(AF_INET, SOCK_STREAM, 0);
+  m_socket = socket(m_address_family, SOCK_STREAM, 0);
   if (m_socket < 0) {
     lerror << "socket error" << std::endl;
     return false;
@@ -45,8 +50,7 @@ bool TCPClientThread::attempt_connect() {
   if (!setupPipe()) {
     return false;
   }
-  linfo << "Connecting to " << inet_ntoa(m_remoteAddr.sin_addr) << ":"
-        << ntohs(m_remoteAddr.sin_port) << "..." << std::endl;
+  linfo << "Connecting to " << formatSocketAddress(getSocketAddress(&m_remoteAddr)) << "..." << std::endl;
   if (connect(m_socket, (struct sockaddr *)&m_remoteAddr, sizeof(m_remoteAddr)) < 0) {
     close(m_socket);
     linfo << "Connect failed." << std::endl;

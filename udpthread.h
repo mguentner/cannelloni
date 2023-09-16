@@ -22,6 +22,7 @@
 
 #include <map>
 
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 
@@ -44,15 +45,16 @@ namespace cannelloni {
 class UDPThread : public ConnectionThread {
   public:
     UDPThread(const struct debugOptions_t &debugOptions,
-              const struct sockaddr_in &remoteAddr,
-              const struct sockaddr_in &localAddr,
+              const struct sockaddr_storage &remoteAddr,
+              const struct sockaddr_storage &localAddr,
+              int address_family,
               bool sort,
               bool checkPeer);
 
     virtual int start();
     virtual void stop();
     virtual void run();
-    bool parsePacket(uint8_t *buf, uint16_t len, struct sockaddr_in &clientAddr);
+    bool parsePacket(uint8_t *buf, uint16_t len, struct sockaddr_storage *clientAddr);
     virtual void transmitFrame(canfd_frame *frame);
 
     void setTimeout(uint32_t timeout);
@@ -70,11 +72,12 @@ class UDPThread : public ConnectionThread {
     bool m_sort;
     bool m_checkPeer;
     int m_socket;
+    int m_address_family;
     Timer m_blockTimer;
     Timer m_transmitTimer;
 
-    struct sockaddr_in m_localAddr;
-    struct sockaddr_in m_remoteAddr;
+    struct sockaddr_storage m_localAddr;
+    struct sockaddr_storage m_remoteAddr;
 
     uint8_t m_sequenceNumber;
     /* Timeout variables */

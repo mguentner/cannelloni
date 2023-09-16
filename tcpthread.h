@@ -26,6 +26,7 @@
 #include <mutex>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/socket.h>
 
 #define SELECT_TIMEOUT 500000
 #define SIGNAL_PIPE_READ 0
@@ -46,8 +47,9 @@ namespace cannelloni {
   class TCPThread : public ConnectionThread {
     public:
       TCPThread(const struct debugOptions_t &debugOptions,
-                 const struct sockaddr_in &remoteAddr,
-                 const struct sockaddr_in &localAddr);
+                 const struct sockaddr_storage &remoteAddr,
+                 const struct sockaddr_storage &localAddr,
+                 int address_family);
 
       virtual int start();
       virtual void cleanup() = 0;
@@ -73,8 +75,9 @@ namespace cannelloni {
       uint64_t m_txCount;
       std::recursive_mutex m_socketWriteMutex;
 
-      struct sockaddr_in m_localAddr;
-      struct sockaddr_in m_remoteAddr;
+      struct sockaddr_storage m_localAddr;
+      struct sockaddr_storage m_remoteAddr;
+      int m_address_family;
 
       int m_framebufferHasDataPipe[2];
       Decoder m_decoder;
@@ -83,8 +86,9 @@ namespace cannelloni {
   class TCPServerThread : public TCPThread  {
     public:
       TCPServerThread(const struct debugOptions_t &debugOptions,
-                      const struct sockaddr_in &remoteAddr,
-                      const struct sockaddr_in &localAddr,
+                      const struct sockaddr_storage &remoteAddr,
+                      const struct sockaddr_storage &localAddr,
+                      int address_family,
                       bool checkPeer);
 
       virtual int start();
@@ -98,8 +102,9 @@ namespace cannelloni {
   class TCPClientThread : public TCPThread {
   public:
     TCPClientThread(const struct debugOptions_t &debugOptions,
-                    const struct sockaddr_in &remoteAddr,
-                    const struct sockaddr_in &localAddr);
+                    const struct sockaddr_storage &remoteAddr,
+                    const struct sockaddr_storage &localAddr,
+                    int address_family);
     virtual bool attempt_connect();
     virtual void cleanup();
   };

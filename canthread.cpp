@@ -38,8 +38,7 @@
 
 using namespace cannelloni;
 
-CANThread::CANThread(const struct debugOptions_t &debugOptions,
-                     const std::string &canInterfaceName = "can0")
+CANThread::CANThread(const struct debugOptions_t &debugOptions, const std::string &canInterfaceName)
   : ConnectionThread()
   , m_canSocket(0)
   , m_canfd(false)
@@ -62,7 +61,7 @@ int CANThread::start() {
     return -1;
   }
   /* Determine the index of m_canInterfaceName */
-  strcpy(canInterface.ifr_name, m_canInterfaceName.c_str());
+  strncpy(canInterface.ifr_name, m_canInterfaceName.c_str(), IFNAMSIZ);
   if (ioctl(m_canSocket, SIOCGIFINDEX, &canInterface) < 0) {
     lerror << "Could get index of interface >" << m_canInterfaceName << "<" << std::endl;
     return -1;
