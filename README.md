@@ -1,13 +1,14 @@
 # cannelloni
 *a SocketCAN over Ethernet tunnel*
 
-cannelloni is written in C++11 and uses UDP to transfer CAN frames
+cannelloni is written in C++11 and uses UDP, TCP or SCTP to transfer CAN frames
 between two machines.
 
 Features:
 
 - frame aggregation in Ethernet frames (multiple CAN frames in one
   Ethernet frame)
+- IPv4/IPv6
 - efficient protocol
 - very high data rates possible (10 Mbit/s +)
 - custom timeouts for certain IDs (see below)
@@ -232,7 +233,7 @@ cannelloni does not support filtering, if however you want to only bridge a
 certain set of CAN IDs, you can first forward the frames of interest to virtual CAN
 interface. From there you will send using cannelloni.
 
-This can be achieved with `cangw` which is part of (can-utils)[https://github.com/linux-can/can-utils/] and its respective
+This can be achieved with `cangw` which is part of [can-utils](https://github.com/linux-can/can-utils/) and its respective
 kernel module is also present in upstream Linux.
 
 Let's look at an example where currently `can0` is sent to a remote machine:
