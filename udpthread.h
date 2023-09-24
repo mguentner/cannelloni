@@ -32,15 +32,12 @@
 
 namespace cannelloni {
 
-#define ETHERNET_MTU 1500
-#define IP_HEADER_SIZE 20
+#define IPv4_HEADER_SIZE 20
+#define IPv6_HEADER_SIZE 40
 #define UDP_HEADER_SIZE 8
 
 /* Block select max. for 500ms */
 #define SELECT_TIMEOUT 500000
-
-#define RECEIVE_BUFFER_SIZE ETHERNET_MTU
-#define UDP_PAYLOAD_SIZE ETHERNET_MTU-IP_HEADER_SIZE-UDP_HEADER_SIZE
 
 struct UDPThreadParams {
   struct sockaddr_storage &remoteAddr;
@@ -48,6 +45,7 @@ struct UDPThreadParams {
   int addressFamily;
   bool sortFrames;
   bool checkPeer;
+  uint16_t linkMtuSize;
 };
 
 class UDPThread : public ConnectionThread {
@@ -91,7 +89,8 @@ class UDPThread : public ConnectionThread {
     uint64_t m_rxCount;
     uint64_t m_txCount;
 
-    uint32_t m_payloadSize;
+    uint32_t m_linkMtuSize; // mtu of the network interface
+    uint32_t m_payloadSize; // payload usable by cannelloni
 };
 
 }

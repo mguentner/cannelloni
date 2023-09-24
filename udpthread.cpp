@@ -55,11 +55,18 @@ UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
   , m_timeout(100)
   , m_rxCount(0)
   , m_txCount(0)
-  , m_payloadSize(UDP_PAYLOAD_SIZE)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
   memcpy(&m_remoteAddr, &params.remoteAddr, sizeof(struct sockaddr_storage));
   memcpy(&m_localAddr, &params.localAddr, sizeof(struct sockaddr_storage));
+  
+  m_linkMtuSize = params.linkMtuSize;
+  
+  if (params.addressFamily == AF_INET) {
+    m_payloadSize = m_linkMtuSize - IPv4_HEADER_SIZE - UDP_HEADER_SIZE;
+  } else {
+    m_payloadSize = m_linkMtuSize - IPv6_HEADER_SIZE - UDP_HEADER_SIZE;
+  }
 }
 
 int UDPThread::start() {
@@ -137,7 +144,7 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_stora
 void UDPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
-  uint8_t buffer[RECEIVE_BUFFER_SIZE];
+  uint8_t buffer[m_linkMtuSize];
   struct sockaddr_storage clientAddr;
   socklen_t clientAddrLen = sizeof(clientAddr);
 
@@ -173,8 +180,8 @@ void UDPThread::run() {
     }
     if (FD_ISSET(m_socket, &readfds)) {
       /* Clear buffer */
-      memset(buffer, 0, RECEIVE_BUFFER_SIZE);
-      receivedBytes = recvfrom(m_socket, buffer, RECEIVE_BUFFER_SIZE,
+      memset(buffer, 0, m_linkMtuSize);
+      receivedBytes = recvfrom(m_socket, buffer, m_linkMtuSize,
           0, (struct sockaddr *)&clientAddr, &clientAddrLen);
       if (receivedBytes < 0) {
         lerror << "recvfrom error." << std::endl;

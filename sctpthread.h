@@ -26,10 +26,6 @@
 
 namespace cannelloni {
 
-/* The common header + one Chunk Header */
-#define SCTP_HEADER_SIZE 12
-#define SCTP_PAYLOAD_SIZE ETHERNET_MTU-IP_HEADER_SIZE-SCTP_HEADER_SIZE
-
 enum SCTPThreadRole {SCTP_SERVER, SCTP_CLIENT};
 
 struct SCTPThreadParams  {
@@ -38,6 +34,12 @@ struct SCTPThreadParams  {
   int addressFamily;
   bool sortFrames;
   bool checkPeer;
+  /* 
+   * This setting does not map 1:1 to how MTU works with UDP
+   * as SCTP will do a path MTU discovery on its own and chunk /
+   * reassemble data
+   */
+  uint16_t linkMtuSize;
   SCTPThreadRole role;
 
   public:
@@ -48,6 +50,7 @@ struct SCTPThreadParams  {
       .addressFamily = addressFamily,
       .sortFrames = sortFrames,
       .checkPeer = checkPeer,
+      .linkMtuSize = linkMtuSize,
     };
    }
 };

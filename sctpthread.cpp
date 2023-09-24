@@ -56,7 +56,11 @@ SCTPThread::SCTPThread(const struct debugOptions_t &debugOptions,
   , m_checkPeerConnect(params.checkPeer)
   , m_connected(false)
 {
-  m_payloadSize = SCTP_PAYLOAD_SIZE;
+  /* 
+   * SCTP will do a path MTU discovery on its own and chunk /
+   * reassemble data, no need for calculations
+   */
+  m_payloadSize = m_linkMtuSize;
 }
 
 int SCTPThread::start() {
@@ -88,7 +92,7 @@ int SCTPThread::start() {
 void SCTPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
-  uint8_t buffer[RECEIVE_BUFFER_SIZE];
+  uint8_t buffer[m_linkMtuSize];
   struct sockaddr_storage clientAddr;
   socklen_t clientAddrLen = sizeof(struct sockaddr_storage);
 
@@ -208,8 +212,8 @@ void SCTPThread::run() {
         int flags = 0;
         memset(&sinfo, 0, sizeof(sinfo));
         /* Clear buffer */
-        memset(buffer, 0, RECEIVE_BUFFER_SIZE);
-        receivedBytes = sctp_recvmsg(m_socket, buffer, RECEIVE_BUFFER_SIZE,
+        memset(buffer, 0, m_linkMtuSize);
+        receivedBytes = sctp_recvmsg(m_socket, buffer, m_linkMtuSize,
                         (struct sockaddr *) &clientAddr, &clientAddrLen, &sinfo, &flags);
         if (receivedBytes < 0) {
           lerror << "recvfrom error." << std::endl;
