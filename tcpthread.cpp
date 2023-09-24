@@ -53,9 +53,7 @@
 #include "tcpthread.h"
 
 TCPThread::TCPThread(const struct debugOptions_t &debugOptions,
-                     const struct sockaddr_storage &remoteAddr,
-                     const struct sockaddr_storage &localAddr,
-                     int address_family)
+                     const struct TCPThreadParams &params)
    : ConnectionThread()
   , m_debugOptions(debugOptions)
   , m_serverSocket(0)
@@ -63,11 +61,11 @@ TCPThread::TCPThread(const struct debugOptions_t &debugOptions,
   , m_connect_state(DISCONNECTED)
   , m_rxCount(0)
   , m_txCount(0)
-  , m_address_family(address_family)
+  , m_addressFamily(params.addressFamily)
 {
 
-  memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_storage));
-  memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_storage));
+  memcpy(&m_remoteAddr, &params.remoteAddr, sizeof(struct sockaddr_storage));
+  memcpy(&m_localAddr, &params.localAddr, sizeof(struct sockaddr_storage));
 }
 
 int TCPThread::start() {

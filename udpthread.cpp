@@ -45,30 +45,33 @@
 #include "parser.h"
 
 UDPThread::UDPThread(const struct debugOptions_t &debugOptions,
-                     const struct sockaddr_storage &remoteAddr,
-                     const struct sockaddr_storage &localAddr,
-                     int address_family,
-                     bool sort,
-                     bool checkPeer)
+                     const struct UDPThreadParams &params)
   : ConnectionThread()
-  , m_sort(sort)
-  , m_checkPeer(checkPeer)
+  , m_sort(params.sortFrames)
+  , m_checkPeer(params.checkPeer)
   , m_socket(0)
-  , m_address_family(address_family)
+  , m_addressFamily(params.addressFamily)
   , m_sequenceNumber(0)
   , m_timeout(100)
   , m_rxCount(0)
   , m_txCount(0)
-  , m_payloadSize(UDP_PAYLOAD_SIZE)
 {
   memcpy(&m_debugOptions, &debugOptions, sizeof(struct debugOptions_t));
-  memcpy(&m_remoteAddr, &remoteAddr, sizeof(struct sockaddr_storage));
-  memcpy(&m_localAddr, &localAddr, sizeof(struct sockaddr_storage));
+  memcpy(&m_remoteAddr, &params.remoteAddr, sizeof(struct sockaddr_storage));
+  memcpy(&m_localAddr, &params.localAddr, sizeof(struct sockaddr_storage));
+  
+  m_linkMtuSize = params.linkMtuSize;
+  
+  if (params.addressFamily == AF_INET) {
+    m_payloadSize = m_linkMtuSize - IPv4_HEADER_SIZE - UDP_HEADER_SIZE;
+  } else {
+    m_payloadSize = m_linkMtuSize - IPv6_HEADER_SIZE - UDP_HEADER_SIZE;
+  }
 }
 
 int UDPThread::start() {
   /* Setup our connection */
-  m_socket = socket(m_address_family, SOCK_DGRAM, 0);
+  m_socket = socket(m_addressFamily, SOCK_DGRAM, 0);
   if (m_socket < 0) {
     lerror << "socket Error" << std::endl;
     return -1;
@@ -98,8 +101,8 @@ void UDPThread::stop() {
 }
 
 bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_storage *clientAddr) {
-  if ((m_address_family == AF_INET && (memcmp(&((struct sockaddr_in *) clientAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0) && m_checkPeer) ||
-      (m_address_family == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) clientAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0) && m_checkPeer)) {
+  if ((m_addressFamily == AF_INET && (memcmp(&((struct sockaddr_in *) clientAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0) && m_checkPeer) ||
+      (m_addressFamily == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) clientAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0) && m_checkPeer)) {
     lwarn << "Got a connection attempt from " << formatSocketAddress(getSocketAddress(clientAddr))
           << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
     return false;
@@ -141,7 +144,7 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_stora
 void UDPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
-  uint8_t buffer[RECEIVE_BUFFER_SIZE];
+  uint8_t buffer[m_linkMtuSize];
   struct sockaddr_storage clientAddr;
   socklen_t clientAddrLen = sizeof(clientAddr);
 
@@ -177,8 +180,8 @@ void UDPThread::run() {
     }
     if (FD_ISSET(m_socket, &readfds)) {
       /* Clear buffer */
-      memset(buffer, 0, RECEIVE_BUFFER_SIZE);
-      receivedBytes = recvfrom(m_socket, buffer, RECEIVE_BUFFER_SIZE,
+      memset(buffer, 0, m_linkMtuSize);
+      receivedBytes = recvfrom(m_socket, buffer, m_linkMtuSize,
           0, (struct sockaddr *)&clientAddr, &clientAddrLen);
       if (receivedBytes < 0) {
         lerror << "recvfrom error." << std::endl;

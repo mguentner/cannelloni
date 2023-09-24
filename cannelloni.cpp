@@ -33,6 +33,7 @@
 
 #include <sys/signalfd.h>
 
+#include "cannelloni.h"
 #include "config.h"
 #include "connection.h"
 #include "inet_address.h"
@@ -49,6 +50,8 @@
 #include "logging.h"
 #include "make_unique.h"
 #include <memory>
+
+#define MIN_LINK_MTU_SIZE 100
 
 #define CANNELLONI_VERSION "1.1.0"
 
@@ -86,6 +89,7 @@ void printUsage() {
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
   std::cout << "\t -4 : use IPv4 (default)" << std::endl;
   std::cout << "\t -6 : use IPv6" << std::endl;
+  std::cout << "\t -m : set MTU (default 1500 bytes)" << std::endl;
   std::cout << "\t -h      \t\t display this help text" << std::endl;
 }
 
@@ -98,6 +102,7 @@ int main(int argc, char **argv) {
   bool useSCTP = false;
   bool useIPv4 = true;
   bool useIPv6 = false;
+  uint16_t linkMtuSize = 1500;
   TCPThreadRole tcpRole = TCP_CLIENT;
 #ifdef SCTP_SUPPORT
   SCTPThreadRole sctpRole = SCTP_CLIENT;
@@ -115,9 +120,9 @@ int main(int argc, char **argv) {
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
 #ifdef SCTP_SUPPORT
-  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:hsp46";
+  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:m:hsp46";
 #else
-  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:hsp46";
+  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:m:hsp46";
 #endif
 
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
@@ -178,6 +183,7 @@ int main(int argc, char **argv) {
         break;
       case 'r':
         remotePort = strtoul(optarg, NULL, 10);
+        remotePort = strtoul(optarg, NULL, 10);
         break;
       case 'R':
         strncpy(remoteIP, optarg, INET6_ADDRSTRLEN-1);
@@ -188,7 +194,7 @@ int main(int argc, char **argv) {
         canInterfaceName = std::string(optarg);
         break;
       case 't':
-        bufferTimeout = strtoul(optarg, NULL, 10);
+        bufferTimeout = static_cast<uint32_t>(strtoul(optarg, NULL, 10));
         break;
       case 'T':
         timeoutTableFile = std::string(optarg);
@@ -218,6 +224,9 @@ int main(int argc, char **argv) {
       case '6':
         useIPv6 = true;
         useIPv4 = false;
+        break;
+      case 'm':
+        linkMtuSize = static_cast<uint16_t>(strtol(optarg, NULL, 10));
         break;
       default:
         printUsage();
@@ -249,6 +258,13 @@ int main(int argc, char **argv) {
   if (bufferTimeout == 0) {
     std::cout << "Usage Error: " << std::endl
               << "Only non-zero timeouts are allowed" << std::endl
+              << std::endl;
+    printUsage();
+    return -1;
+  }
+  if (linkMtuSize < MIN_LINK_MTU_SIZE) {
+    std::cout << "Usage Error: " << std::endl
+              << "Specify a link mtu size greater than " << MIN_LINK_MTU_SIZE << std::endl
               << std::endl;
     printUsage();
     return -1;
@@ -323,43 +339,69 @@ int main(int argc, char **argv) {
   memset(&remoteAddr, 0, sizeof(sockaddr_storage));
   memset(&localAddr, 0, sizeof(sockaddr_storage));
 
-  int address_family = AF_INET;
+  int addressFamily = AF_INET;
   if (useIPv6) {
-    address_family = AF_INET6;
+    addressFamily = AF_INET6;
   }
 
-  if (remoteIPSupplied && !parseAddress(remoteIP, (struct sockaddr *) &remoteAddr, address_family)) {
+  if (remoteIPSupplied && !parseAddress(remoteIP, (struct sockaddr *) &remoteAddr, addressFamily)) {
     lerror << "Invalid remote address";
     return -1;
   }
 
-  if (!parseAddress(localIP, (struct sockaddr *) &localAddr, address_family)) {
+  if (!parseAddress(localIP, (struct sockaddr *) &localAddr, addressFamily)) {
     lerror << "Invalid listen address";
     return -1;
   }
 
-  if (address_family == AF_INET) {
+  if (addressFamily == AF_INET) {
     ((struct sockaddr_in *) &remoteAddr)->sin_port = htons(remotePort);
     ((struct sockaddr_in *) &localAddr)->sin_port = htons(localPort);
-  } else if (address_family == AF_INET6) {
+  } else if (addressFamily == AF_INET6) {
     ((struct sockaddr_in6 *) &remoteAddr)->sin6_port = htons(remotePort);
     ((struct sockaddr_in6 *) &localAddr)->sin6_port = htons(localPort);
   }
 
   std::unique_ptr<ConnectionThread> netThread;
   if (useTCP && tcpRole == TCP_SERVER) {
-    netThread = std::make_unique<TCPServerThread>(debugOptions, remoteAddr, localAddr, address_family, remoteIPSupplied);
+    netThread = std::make_unique<TCPServerThread>(debugOptions, TCPServerThreadParams {
+        .remoteAddr = remoteAddr,
+        .localAddr = localAddr,
+        .addressFamily = addressFamily,
+        .checkPeer = checkPeer
+      });
   } else if (useTCP && tcpRole == TCP_CLIENT) {
-    netThread = std::make_unique<TCPClientThread>(debugOptions, remoteAddr, localAddr, address_family);
+    netThread = std::make_unique<TCPClientThread>(debugOptions, TCPThreadParams {
+        .remoteAddr = remoteAddr,
+        .localAddr = localAddr,
+        .addressFamily = addressFamily,
+    });
   } else if (useSCTP) {
 #ifdef SCTP_SUPPORT
-    auto sctpThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, address_family, sortUDP, remoteIPSupplied, sctpRole);
+    auto sctpThread = std::make_unique<SCTPThread>(debugOptions, SCTPThreadParams {
+      .remoteAddr = remoteAddr,
+      .localAddr = localAddr,      
+      .addressFamily = addressFamily,
+      .sortFrames = sortUDP,
+      .checkPeer = checkPeer,
+      .linkMtuSize = linkMtuSize,
+      .role = sctpRole,
+    });
     sctpThread.get()->setTimeout(bufferTimeout);
     sctpThread.get()->setTimeoutTable(timeoutTable);
     netThread = std::move(sctpThread);
 #endif
   } else {
-    auto udpThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, address_family, sortUDP, checkPeer);
+    
+    auto udpThread = std::make_unique<UDPThread>(debugOptions, UDPThreadParams{
+      .remoteAddr = remoteAddr,
+      .localAddr = localAddr,      
+      .addressFamily = addressFamily,
+      .sortFrames = sortUDP,
+      .checkPeer = checkPeer,
+      .linkMtuSize = linkMtuSize,
+    });
+    
     udpThread.get()->setTimeout(bufferTimeout);
     udpThread.get()->setTimeoutTable(timeoutTable);
     netThread = std::move(udpThread);

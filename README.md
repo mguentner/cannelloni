@@ -179,6 +179,9 @@ IP: 192.168.0.3
 cannelloni -I vcan0 -R 192.168.0.2 -r 13000 -l 12000
 ```
 
+Set the *MTU* using `-m` depending on your connection. Default is
+1500 bytes.
+
 ## SCTP
 
 With SCTP it is possible to use cannelloni over lossy connections
