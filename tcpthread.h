@@ -43,13 +43,17 @@ enum ConnectState { DISCONNECTED, CONNECTED, NEGOTIATED };
 #define CANNELLONI_CONNECT_V1_STRING "CANNELLONIv1"
 
 namespace cannelloni {
+  
+  struct TCPThreadParams {
+    struct sockaddr_storage &remoteAddr;
+    struct sockaddr_storage &localAddr;
+    int addressFamily;
+  };
 
   class TCPThread : public ConnectionThread {
     public:
       TCPThread(const struct debugOptions_t &debugOptions,
-                 const struct sockaddr_storage &remoteAddr,
-                 const struct sockaddr_storage &localAddr,
-                 int address_family);
+                const struct TCPThreadParams &params);
 
       virtual int start();
       virtual void cleanup() = 0;
@@ -77,19 +81,33 @@ namespace cannelloni {
 
       struct sockaddr_storage m_localAddr;
       struct sockaddr_storage m_remoteAddr;
-      int m_address_family;
+      int m_addressFamily;
 
       int m_framebufferHasDataPipe[2];
       Decoder m_decoder;
   };
 
+  struct TCPServerThreadParams {
+    struct sockaddr_storage &remoteAddr;
+    struct sockaddr_storage &localAddr;
+    int addressFamily;
+    bool checkPeer;
+    
+    public:
+
+    TCPThreadParams toTCPThreadParams() const {
+      return TCPThreadParams{
+        .remoteAddr = remoteAddr,
+        .localAddr = localAddr,
+        .addressFamily = addressFamily
+      };
+    }
+  };
+
   class TCPServerThread : public TCPThread  {
     public:
       TCPServerThread(const struct debugOptions_t &debugOptions,
-                      const struct sockaddr_storage &remoteAddr,
-                      const struct sockaddr_storage &localAddr,
-                      int address_family,
-                      bool checkPeer);
+                      const struct TCPServerThreadParams &params);
 
       virtual int start();
       virtual bool attempt_connect();
@@ -102,9 +120,7 @@ namespace cannelloni {
   class TCPClientThread : public TCPThread {
   public:
     TCPClientThread(const struct debugOptions_t &debugOptions,
-                    const struct sockaddr_storage &remoteAddr,
-                    const struct sockaddr_storage &localAddr,
-                    int address_family);
+                    const struct TCPThreadParams &params);
     virtual bool attempt_connect();
     virtual void cleanup();
   };

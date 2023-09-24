@@ -323,43 +323,67 @@ int main(int argc, char **argv) {
   memset(&remoteAddr, 0, sizeof(sockaddr_storage));
   memset(&localAddr, 0, sizeof(sockaddr_storage));
 
-  int address_family = AF_INET;
+  int addressFamily = AF_INET;
   if (useIPv6) {
-    address_family = AF_INET6;
+    addressFamily = AF_INET6;
   }
 
-  if (remoteIPSupplied && !parseAddress(remoteIP, (struct sockaddr *) &remoteAddr, address_family)) {
+  if (remoteIPSupplied && !parseAddress(remoteIP, (struct sockaddr *) &remoteAddr, addressFamily)) {
     lerror << "Invalid remote address";
     return -1;
   }
 
-  if (!parseAddress(localIP, (struct sockaddr *) &localAddr, address_family)) {
+  if (!parseAddress(localIP, (struct sockaddr *) &localAddr, addressFamily)) {
     lerror << "Invalid listen address";
     return -1;
   }
 
-  if (address_family == AF_INET) {
+  if (addressFamily == AF_INET) {
     ((struct sockaddr_in *) &remoteAddr)->sin_port = htons(remotePort);
     ((struct sockaddr_in *) &localAddr)->sin_port = htons(localPort);
-  } else if (address_family == AF_INET6) {
+  } else if (addressFamily == AF_INET6) {
     ((struct sockaddr_in6 *) &remoteAddr)->sin6_port = htons(remotePort);
     ((struct sockaddr_in6 *) &localAddr)->sin6_port = htons(localPort);
   }
 
   std::unique_ptr<ConnectionThread> netThread;
   if (useTCP && tcpRole == TCP_SERVER) {
-    netThread = std::make_unique<TCPServerThread>(debugOptions, remoteAddr, localAddr, address_family, remoteIPSupplied);
+    netThread = std::make_unique<TCPServerThread>(debugOptions, TCPServerThreadParams {
+        .remoteAddr = remoteAddr,
+        .localAddr = localAddr,
+        .addressFamily = addressFamily,
+        .checkPeer = checkPeer
+      });
   } else if (useTCP && tcpRole == TCP_CLIENT) {
-    netThread = std::make_unique<TCPClientThread>(debugOptions, remoteAddr, localAddr, address_family);
+    netThread = std::make_unique<TCPClientThread>(debugOptions, TCPThreadParams {
+        .remoteAddr = remoteAddr,
+        .localAddr = localAddr,
+        .addressFamily = addressFamily,
+    });
   } else if (useSCTP) {
 #ifdef SCTP_SUPPORT
-    auto sctpThread = std::make_unique<SCTPThread>(debugOptions, remoteAddr, localAddr, address_family, sortUDP, remoteIPSupplied, sctpRole);
+    auto sctpThread = std::make_unique<SCTPThread>(debugOptions, SCTPThreadParams {
+      .remoteAddr = remoteAddr,
+      .localAddr = localAddr,      
+      .addressFamily = addressFamily,
+      .sortFrames = sortUDP,
+      .checkPeer = checkPeer,
+      .role = sctpRole,
+    });
     sctpThread.get()->setTimeout(bufferTimeout);
     sctpThread.get()->setTimeoutTable(timeoutTable);
     netThread = std::move(sctpThread);
 #endif
   } else {
-    auto udpThread = std::make_unique<UDPThread>(debugOptions, remoteAddr, localAddr, address_family, sortUDP, checkPeer);
+    
+    auto udpThread = std::make_unique<UDPThread>(debugOptions, UDPThreadParams{
+      .remoteAddr = remoteAddr,
+      .localAddr = localAddr,      
+      .addressFamily = addressFamily,
+      .sortFrames = sortUDP,
+      .checkPeer = checkPeer,
+    });
+    
     udpThread.get()->setTimeout(bufferTimeout);
     udpThread.get()->setTimeoutTable(timeoutTable);
     netThread = std::move(udpThread);

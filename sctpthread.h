@@ -32,15 +32,30 @@ namespace cannelloni {
 
 enum SCTPThreadRole {SCTP_SERVER, SCTP_CLIENT};
 
+struct SCTPThreadParams  {
+  struct sockaddr_storage &remoteAddr;
+  struct sockaddr_storage &localAddr;
+  int addressFamily;
+  bool sortFrames;
+  bool checkPeer;
+  SCTPThreadRole role;
+
+  public:
+   UDPThreadParams toUDPThreadParams() const {
+    return UDPThreadParams{
+      .remoteAddr = remoteAddr,
+      .localAddr = localAddr,
+      .addressFamily = addressFamily,
+      .sortFrames = sortFrames,
+      .checkPeer = checkPeer,
+    };
+   }
+};
+
 class SCTPThread : public UDPThread {
   public:
     SCTPThread(const struct debugOptions_t &debugOptions,
-               const struct sockaddr_storage &remoteAddr,
-               const struct sockaddr_storage &localAddr,
-               int address_family,
-               bool sort,
-               bool checkPeer,
-               SCTPThreadRole role);
+               const struct SCTPThreadParams &params);
 
     virtual int start();
     virtual void run();

@@ -31,15 +31,13 @@
 using namespace cannelloni;
 
 TCPClientThread::TCPClientThread(const struct debugOptions_t &debugOptions,
-                                 const struct sockaddr_storage &remoteAddr,
-                                 const struct sockaddr_storage &localAddr,
-                                 int address_family)
-  : TCPThread(debugOptions, remoteAddr, localAddr, address_family)
+                                 const struct TCPThreadParams &params)
+  : TCPThread(debugOptions, params)
 {
 }
 
 bool TCPClientThread::attempt_connect() {
-  m_socket = socket(m_address_family, SOCK_STREAM, 0);
+  m_socket = socket(m_addressFamily, SOCK_STREAM, 0);
   if (m_socket < 0) {
     lerror << "socket error" << std::endl;
     return false;

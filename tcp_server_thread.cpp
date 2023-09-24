@@ -30,18 +30,15 @@
 using namespace cannelloni;
 
 TCPServerThread::TCPServerThread(const struct debugOptions_t &debugOptions,
-                                 const struct sockaddr_storage &remoteAddr,
-                                 const struct sockaddr_storage &localAddr,
-                                 int address_family,
-                                 bool checkPeer)
-  : TCPThread(debugOptions, remoteAddr, localAddr, address_family),
-  m_checkPeerConnect(checkPeer)
+                                 const struct TCPServerThreadParams &params)
+  : TCPThread(debugOptions, params.toTCPThreadParams()),
+  m_checkPeerConnect(params.checkPeer)
 {
 
 }
 
 int TCPServerThread::start() {
-  m_serverSocket = socket(m_address_family, SOCK_STREAM, 0);
+  m_serverSocket = socket(m_addressFamily, SOCK_STREAM, 0);
   if (m_serverSocket < 0) {
     lerror << "socket error" << std::endl;
     return -1;
@@ -50,14 +47,14 @@ int TCPServerThread::start() {
   const int option = 1;
   setsockopt(m_serverSocket, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
 
-  if (m_address_family == AF_INET && bind(m_serverSocket, (struct sockaddr *)&m_localAddr, sizeof(sockaddr_in)) < 0) {
+  if (m_addressFamily == AF_INET && bind(m_serverSocket, (struct sockaddr *)&m_localAddr, sizeof(sockaddr_in)) < 0) {
     lerror << "Could not bind to address" << std::endl;
     return -1;
-  } else if (m_address_family == AF_INET6 && bind(m_serverSocket, (struct sockaddr *)&m_localAddr, sizeof(sockaddr_in6)) < 0) {
+  } else if (m_addressFamily == AF_INET6 && bind(m_serverSocket, (struct sockaddr *)&m_localAddr, sizeof(sockaddr_in6)) < 0) {
     lerror << "Could not bind to address" << std::endl;
     return -1;
-  } else if (m_address_family != AF_INET && m_address_family != AF_INET6) {
-    lerror << "Invalid address family" << m_address_family <<  std::endl;
+  } else if (m_addressFamily != AF_INET && m_addressFamily != AF_INET6) {
+    lerror << "Invalid address family" << m_addressFamily <<  std::endl;
     return -1;
   }
   return TCPThread::start();
@@ -97,8 +94,8 @@ bool TCPServerThread::attempt_connect() {
    * the user specified as the peer unless m_checkPeerConnect is false
    */
   if (m_checkPeerConnect) {
-    if ((m_address_family == AF_INET && (memcmp(&((struct sockaddr_in *) &connAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0)) || 
-        (m_address_family == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) &connAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0))) {
+    if ((m_addressFamily == AF_INET && (memcmp(&((struct sockaddr_in *) &connAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0)) || 
+        (m_addressFamily == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) &connAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0))) {
       lwarn << "Got a connection attempt from " << formatSocketAddress(getSocketAddress(&connAddr))
             << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
       close(m_socket);

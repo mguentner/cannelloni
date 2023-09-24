@@ -46,17 +46,14 @@
 #include "logging.h"
 #include "sctpthread.h"
 
+
+
 SCTPThread::SCTPThread(const struct debugOptions_t &debugOptions,
-                       const struct sockaddr_storage &remoteAddr,
-                       const struct sockaddr_storage &localAddr,
-                       int address_family,
-                       bool sort,
-                       bool checkPeer,
-                       SCTPThreadRole role)
-  : UDPThread(debugOptions, remoteAddr, localAddr, address_family, sort, checkPeer)
+                       const struct SCTPThreadParams &params)
+  : UDPThread(debugOptions, params.toUDPThreadParams())
   , m_assoc_id(0)
-  , m_role(role)
-  , m_checkPeerConnect(checkPeer)
+  , m_role(params.role)
+  , m_checkPeerConnect(params.checkPeer)
   , m_connected(false)
 {
   m_payloadSize = SCTP_PAYLOAD_SIZE;
@@ -69,7 +66,7 @@ int SCTPThread::start() {
    * instead of SOCK_SEQPACKET
    */
   if (m_role == SCTP_SERVER) {
-    m_serverSocket = socket(m_address_family, SOCK_STREAM, IPPROTO_SCTP);
+    m_serverSocket = socket(m_addressFamily, SOCK_STREAM, IPPROTO_SCTP);
     if (m_serverSocket < 0) {
       lerror << "socket error" << std::endl;
       return -1;
@@ -136,8 +133,8 @@ void SCTPThread::run() {
          * the user specified as the peer unless m_checkPeerConnect is false
          */
         if (m_checkPeerConnect) {
-          if ((m_address_family == AF_INET && (memcmp(&((struct sockaddr_in *) &connAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0)) || 
-              (m_address_family == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) &connAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0))) {
+          if ((m_addressFamily == AF_INET && (memcmp(&((struct sockaddr_in *) &connAddr)->sin_addr, &((struct sockaddr_in *) &m_remoteAddr)->sin_addr, sizeof(struct in_addr)) != 0)) || 
+              (m_addressFamily == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) &connAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0))) {
             lwarn << "Got a connection attempt from " << formatSocketAddress(getSocketAddress(&connAddr))
                   << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
             close(m_socket);
@@ -158,7 +155,7 @@ void SCTPThread::run() {
       } else {
         // SCTP_CLIENT
         const int nagle = 0;
-        m_socket = socket(m_address_family, SOCK_STREAM, IPPROTO_SCTP);
+        m_socket = socket(m_addressFamily, SOCK_STREAM, IPPROTO_SCTP);
         if (m_socket < 0) {
           lerror << "socket error" << std::endl;
           continue;
