@@ -88,11 +88,11 @@ void printUsage() {
 #endif
   std::cout << "\t\t\t b : enable debugging of internal buffer structures" << std::endl;
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
-  std::cout << "\t -4 : use IPv4 (default)" << std::endl;
-  std::cout << "\t -6 : use IPv6" << std::endl;
-  std::cout << "\t -m : set MTU (default 1500 bytes)" << std::endl;
-  std::cout << "\t -f : fork into background / daemon mode" << std::endl;
-  std::cout << "\t -h      \t\t display this help text" << std::endl;
+  std::cout << "\t -4 \t\t\t use IPv4 (default)" << std::endl;
+  std::cout << "\t -6 \t\t\t use IPv6" << std::endl;
+  std::cout << "\t -m \t\t\t set MTU (default 1500 bytes)" << std::endl;
+  std::cout << "\t -f \t\t\t fork into background / daemon mode" << std::endl;
+  std::cout << "\t -h \t\t\t display this help text" << std::endl;
 }
 
 void daemonize() {
