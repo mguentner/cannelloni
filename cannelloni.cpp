@@ -18,6 +18,7 @@
  *
  */
 
+#include <fcntl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -87,10 +88,60 @@ void printUsage() {
 #endif
   std::cout << "\t\t\t b : enable debugging of internal buffer structures" << std::endl;
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
-  std::cout << "\t -4 : use IPv4 (default)" << std::endl;
-  std::cout << "\t -6 : use IPv6" << std::endl;
-  std::cout << "\t -m : set MTU (default 1500 bytes)" << std::endl;
-  std::cout << "\t -h      \t\t display this help text" << std::endl;
+  std::cout << "\t -4 \t\t\t use IPv4 (default)" << std::endl;
+  std::cout << "\t -6 \t\t\t use IPv6" << std::endl;
+  std::cout << "\t -m \t\t\t set MTU (default 1500 bytes)" << std::endl;
+  std::cout << "\t -f \t\t\t fork into background / daemon mode" << std::endl;
+  std::cout << "\t -h \t\t\t display this help text" << std::endl;
+}
+
+void daemonize() {
+  pid_t pid = fork();
+  if (pid < 0) {
+    exit(EXIT_FAILURE);
+  }
+  if (pid > 0) {
+    exit(EXIT_SUCCESS); // exit parent
+  }
+
+  if (setsid() < 0) {
+    exit(EXIT_FAILURE);
+  }
+
+  // fork again
+  pid = fork();
+  if (pid < 0) {
+    exit(EXIT_FAILURE);
+  }
+  if (pid > 0) {
+    exit(EXIT_SUCCESS); // exit parent
+  }
+
+  std::cout << "pid: " << getpid() << std::endl;
+
+  // change to root, cannelloni only may read the
+  // timeoutTableFile which has already happend
+  // by the time this function is called
+  if (chdir("/") < 0) {
+    exit(EXIT_FAILURE);
+  }
+
+  close(STDIN_FILENO);
+  close(STDOUT_FILENO);
+  close(STDERR_FILENO);
+
+  int null_fd = open("/dev/null", O_RDWR);
+  if (null_fd == -1) {
+    exit(EXIT_FAILURE);
+  }
+
+  dup2(null_fd, STDIN_FILENO);
+  dup2(null_fd, STDOUT_FILENO);
+  dup2(null_fd, STDERR_FILENO);
+
+  if (null_fd > STDERR_FILENO) {
+    close(null_fd);
+  }
 }
 
 int main(int argc, char **argv) {
@@ -102,6 +153,7 @@ int main(int argc, char **argv) {
   bool useSCTP = false;
   bool useIPv4 = true;
   bool useIPv6 = false;
+  bool forkIntoBackground = false;
   uint16_t linkMtuSize = 1500;
   TCPThreadRole tcpRole = TCP_CLIENT;
 #ifdef SCTP_SUPPORT
@@ -120,9 +172,9 @@ int main(int argc, char **argv) {
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
 #ifdef SCTP_SUPPORT
-  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:m:hsp46";
+  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:m:hsp46f";
 #else
-  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:m:hsp46";
+  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:m:hsp46f";
 #endif
 
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
@@ -228,6 +280,9 @@ int main(int argc, char **argv) {
       case 'm':
         linkMtuSize = static_cast<uint16_t>(strtol(optarg, NULL, 10));
         break;
+      case 'f':
+         forkIntoBackground = true;
+         break;
       default:
         printUsage();
         return -1;
@@ -312,8 +367,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  struct sockaddr_storage remoteAddr;
-  struct sockaddr_storage localAddr;
   /* We use the signalfd() system call to create a
    * file descriptor to receive signals */
   sigset_t signalMask;
@@ -336,6 +389,8 @@ int main(int argc, char **argv) {
     return -1;
   }
 
+  struct sockaddr_storage remoteAddr;
+  struct sockaddr_storage localAddr;
   memset(&remoteAddr, 0, sizeof(sockaddr_storage));
   memset(&localAddr, 0, sizeof(sockaddr_storage));
 
@@ -360,6 +415,11 @@ int main(int argc, char **argv) {
   } else if (addressFamily == AF_INET6) {
     ((struct sockaddr_in6 *) &remoteAddr)->sin6_port = htons(remotePort);
     ((struct sockaddr_in6 *) &localAddr)->sin6_port = htons(localPort);
+  }
+  
+  if (forkIntoBackground) {
+    std::cout << "cannelloni is forking into background." << std::endl;
+    daemonize();
   }
 
   std::unique_ptr<ConnectionThread> netThread;
