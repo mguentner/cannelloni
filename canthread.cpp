@@ -141,7 +141,7 @@ void CANThread::run() {
         } else {
           m_peerThread->getFrameBuffer()->insertFramePool(frame);
           lerror << "CAN read error" << std::endl;
-          return;
+          break;
         }
       } else if (receivedBytes == CAN_MTU || receivedBytes == CANFD_MTU) {
         m_rxCount++;

@@ -475,16 +475,35 @@ int main(int argc, char **argv) {
   canThread->setFrameBuffer(canFrameBuffer.get());
   int netStartReturn = netThread->start();
   int canStartReturn = canThread->start();
+
   while (1 && netStartReturn == 0 && canStartReturn == 0) {
-    ssize_t receivedBytes = read(signalFD, &signalFdInfo, sizeof(struct signalfd_siginfo));
-    if (receivedBytes != sizeof(struct signalfd_siginfo)) {
-      lerror << "signalfd read error" << std::endl;
+    struct timeval timeout;
+    fd_set set;
+    FD_ZERO(&set);
+    FD_SET(signalFD, &set);
+
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+
+    int ret = select(signalFD + 1, &set, NULL, NULL, &timeout);
+    if (ret == -1) {
+      lerror << "select error" << std::endl;
       break;
-    }
-    /* Currently we only receive SIGTERM and SIGINT but we check nonetheless */
-    if (signalFdInfo.ssi_signo == SIGTERM || signalFdInfo.ssi_signo == SIGINT) {
-      linfo << "Received signal " << signalFdInfo.ssi_signo << ": Exiting" << std::endl;
-      break;
+    } else if (ret == 0) {
+      if (!(netThread->isRunning() && canThread->isRunning())) {
+        break;
+      }
+    } else {
+      ssize_t receivedBytes = read(signalFD, &signalFdInfo, sizeof(struct signalfd_siginfo));
+      if (receivedBytes != sizeof(struct signalfd_siginfo)) {
+        lerror << "signalfd read error" << std::endl;
+        break;
+      }
+      /* Currently we only receive SIGTERM and SIGINT but we check nonetheless */
+      if (signalFdInfo.ssi_signo == SIGTERM || signalFdInfo.ssi_signo == SIGINT) {
+        linfo << "Received signal " << signalFdInfo.ssi_signo << ": Exiting" << std::endl;
+        break;
+      }
     }
   }
 
