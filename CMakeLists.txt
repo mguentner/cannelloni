@@ -57,6 +57,10 @@ add_library(cannelloni-common SHARED
             parser.cpp
             decoder.cpp)
 
+add_library(cannelloni-common-static STATIC
+            parser.cpp
+            decoder.cpp)
+
 set_target_properties ( cannelloni-common
   PROPERTIES
   VERSION 0.0.1
@@ -71,7 +75,7 @@ if(SCTP_SUPPORT)
     target_link_libraries(addsources sctpthread)
 endif(SCTP_SUPPORT)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(cannelloni addsources cannelloni-common pthread)
+target_link_libraries(cannelloni addsources cannelloni-common-static pthread)
 target_compile_features(cannelloni PRIVATE cxx_auto_type)
 target_compile_features(addsources PRIVATE cxx_auto_type)
 
