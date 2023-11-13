@@ -24,7 +24,9 @@
 #include <cstdint>
 #include <cstdio>
 
+#ifdef __GLIBCXX__
 #include <bits/stdc++.h>
+#endif
 
 #include <linux/can.h>
 #include <string.h>
