@@ -20,19 +20,6 @@ if(NOT SCTP_FOUND AND SCTP_SUPPORT)
   message(STATUS "Install lksctp-tools for SCTP.")
 endif(NOT SCTP_FOUND AND SCTP_SUPPORT)
 
-find_file(LINUX_VERSION_H "linux/version.h")
-if(LINUX_VERSION_H)
-  execute_process(
-    COMMAND sed -n "s/#define\\s\\+LINUX_VERSION_CODE\\s\\+\\([0-9]\\+\\)/\\1/p" ${LINUX_VERSION_H}
-    OUTPUT_VARIABLE LINUX_VERSION_CODE
-  )
-  if(LINUX_VERSION_CODE LESS 198144)
-    # The Linux Kernel headers are older than version 3.6
-    # We need to use the ones shipped with cannelloni
-    include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  endif()
-endif()
-
 CONFIGURE_FILE(
   ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
   ${CMAKE_CURRENT_BINARY_DIR}/config.h
