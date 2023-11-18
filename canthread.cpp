@@ -61,7 +61,8 @@ int CANThread::start() {
     return -1;
   }
   /* Determine the index of m_canInterfaceName */
-  strncpy(canInterface.ifr_name, m_canInterfaceName.c_str(), IFNAMSIZ);
+  strncpy(canInterface.ifr_name, m_canInterfaceName.c_str(), IFNAMSIZ-1);
+  canInterface.ifr_name[IF_NAMESIZE-1] = '\0';
   if (ioctl(m_canSocket, SIOCGIFINDEX, &canInterface) < 0) {
     lerror << "Could get index of interface >" << m_canInterfaceName << "<" << std::endl;
     return -1;
