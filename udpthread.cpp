@@ -144,7 +144,8 @@ bool UDPThread::parsePacket(uint8_t *buffer, uint16_t len, struct sockaddr_stora
 void UDPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
-  uint8_t buffer[m_linkMtuSize];
+  std::vector<uint8_t> bufferVector(m_linkMtuSize);
+  uint8_t *buffer = bufferVector.data();
   struct sockaddr_storage clientAddr;
   socklen_t clientAddrLen = sizeof(clientAddr);
 
