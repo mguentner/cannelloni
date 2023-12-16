@@ -186,10 +186,11 @@ int main(int argc, char **argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
+  const std::string argument_options = "C:l:L:r:R:I:t:T:d:m:P:hsp46f"
 #ifdef SCTP_SUPPORT
-  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:m:P:hsp46f";
+  "S:";
 #else
-  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:m:P:hsp46f";
+  ;
 #endif
 
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
