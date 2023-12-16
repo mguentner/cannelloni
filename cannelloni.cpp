@@ -18,7 +18,10 @@
  *
  */
 
+#include <cstdlib>
 #include <fcntl.h>
+#include <fstream>
+#include <iostream>
 #include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -90,12 +93,13 @@ void printUsage() {
   std::cout << "\t\t\t t : enable debugging of internal timers" << std::endl;
   std::cout << "\t -4 \t\t\t use IPv4 (default)" << std::endl;
   std::cout << "\t -6 \t\t\t use IPv6" << std::endl;
-  std::cout << "\t -m \t\t\t set MTU (default 1500 bytes)" << std::endl;
+  std::cout << "\t -m \t\t\t set MTU, default: 1500 bytes" << std::endl;
   std::cout << "\t -f \t\t\t fork into background / daemon mode" << std::endl;
+  std::cout << "\t -P \t\t\t pid file path (only in daemon mode), default: /var/run/cannelloni.pid" << std::endl;
   std::cout << "\t -h \t\t\t display this help text" << std::endl;
 }
 
-void daemonize() {
+void daemonize(std::string pidFilePath) {
   pid_t pid = fork();
   if (pid < 0) {
     exit(EXIT_FAILURE);
@@ -118,6 +122,16 @@ void daemonize() {
   }
 
   std::cout << "pid: " << getpid() << std::endl;
+
+  std::ofstream pidFile;
+  pidFile.open(pidFilePath,  std::ofstream::out);
+  if (pidFile.fail()) {
+    std::cerr << "could not write pid file" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  pidFile << getpid() << std::endl;
+  pidFile.flush();
+  pidFile.close();
 
   // change to root, cannelloni only may read the
   // timeoutTableFile which has already happend
@@ -166,15 +180,16 @@ int main(int argc, char **argv) {
   std::string canInterfaceName = "vcan0";
   uint32_t bufferTimeout = 100000;
   std::string timeoutTableFile;
+  std::string pidFilePath = "/var/run/cannelloni.pid";
   /* Key is CAN ID, Value is timeout in us */
   std::map<uint32_t, uint32_t> timeoutTable;
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
 #ifdef SCTP_SUPPORT
-  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:m:hsp46f";
+  const std::string argument_options = "C:S:l:L:r:R:I:t:T:d:m:P:hsp46f";
 #else
-  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:m:hsp46f";
+  const std::string argument_options = "C:Sl:L:r:R:I:t:T:d:m:P:hsp46f";
 #endif
 
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
@@ -281,8 +296,11 @@ int main(int argc, char **argv) {
         linkMtuSize = static_cast<uint16_t>(strtol(optarg, NULL, 10));
         break;
       case 'f':
-         forkIntoBackground = true;
-         break;
+        forkIntoBackground = true;
+        break;
+      case 'P':
+        pidFilePath = std::string(optarg);
+        break;
       default:
         printUsage();
         return -1;
@@ -419,7 +437,7 @@ int main(int argc, char **argv) {
   
   if (forkIntoBackground) {
     std::cout << "cannelloni is forking into background." << std::endl;
-    daemonize();
+    daemonize(pidFilePath);
   }
 
   std::unique_ptr<ConnectionThread> netThread;
@@ -476,7 +494,7 @@ int main(int argc, char **argv) {
   int netStartReturn = netThread->start();
   int canStartReturn = canThread->start();
 
-  while (1 && netStartReturn == 0 && canStartReturn == 0) {
+  while (netStartReturn == 0 && canStartReturn == 0) {
     struct timeval timeout;
     fd_set set;
     FD_ZERO(&set);
