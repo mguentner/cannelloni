@@ -21,6 +21,8 @@ Be aware that a frame might be complete after just the `len` information. You ca
 for a state-machine based decoder for streams and `parser.cpp` for a general code to encode
 frames.
 
+![flow diagram](./cannelloni_tcp_flow.svg)
+
 ## CAN FD
 
 CAN FD frames are marked with the MSB of `len` being
