@@ -1,6 +1,8 @@
 # cannelloni
 *a SocketCAN over Ethernet tunnel*
 
+[![Chat on Matrix](https://matrix.to/img/matrix-badge.svg)](https://matrix.to/#/#cannelloni:matrix.org)
+
 cannelloni is written in C++11 and uses UDP, TCP or SCTP to transfer CAN frames
 between two machines.
 
