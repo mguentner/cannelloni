@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <vector>
 
 #include <fcntl.h>
 #include <unistd.h>
