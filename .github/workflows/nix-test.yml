@@ -3,14 +3,6 @@ on:
   pull_request:
   push:
 jobs:
-  nix-build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - uses: cachix/install-nix-action@v20
-      with:
-        nix_path: nixpkgs=channel:nixos-unstable
-    - run: nix-build -E 'with import <nixpkgs> {}; pkgs.callPackage ./default.nix {}'
   flake-check:
     runs-on: ubuntu-latest
     steps:
