@@ -57,7 +57,7 @@
 
 #define MIN_LINK_MTU_SIZE 100
 
-#define CANNELLONI_VERSION "1.1.0"
+#define CANNELLONI_VERSION "1.2.1"
 
 using namespace cannelloni;
 
