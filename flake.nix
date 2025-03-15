@@ -1,35 +1,35 @@
 {
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { self, nixpkgs, ... }: let
-    systems = [ "x86_64-linux" "aarch64-linux" ];
-    overlay = final: prev: {
-      cannelloni = final.callPackage ./default.nix {};
-    };
-    forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
-    forAllPkgs = f:
-      forAllSystems (system: let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ overlay ];
-        };
-      in
-        f pkgs);
+  outputs = { nixpkgs, ... }: let
+    overlay = import ./nix/overlay.nix;
+
+    supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+
+    forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+
+    nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; overlays = [ overlay ]; });
   in {
     overlays.default = overlay;
 
-    packages = forAllPkgs (pkgs: {
-      default = pkgs.cannelloni;
+    packages = forAllSystems (system:
+    {
+      inherit (nixpkgsFor.${system}) cannelloni;
     });
 
-    devShells = forAllPkgs (pkgs: {
-      default = import ./shell.nix { inherit pkgs; };
+    defaultPackage = forAllSystems (system: (nixpkgsFor.${system}).cannelloni);
+
+    devShells = forAllSystems (system:
+    {
+      default = import ./shell.nix { pkgs = (nixpkgsFor.${system}); };
     });
 
-    # nixosModules.default = import ./nixos-module.nix; TODO
+    nixosModules.default = import ./nix/module.nix;
 
-    checks = forAllPkgs (pkgs: {
-      # TODO
+    checks = forAllSystems (system: {
+      sctp = nixpkgsFor.${system}.callPackage ./nix/tests/sctp.nix {};
+      tcp = nixpkgsFor.${system}.callPackage ./nix/tests/tcp.nix {};
+      udp = nixpkgsFor.${system}.callPackage ./nix/tests/udp.nix {};
     });
   };
 }
