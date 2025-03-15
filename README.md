@@ -38,12 +38,12 @@ cannelloni uses cmake to generate a Makefile.
 You can build cannelloni using the following command.
 
 ```
-cmake -DCMAKE_BUILD_TYPE=Release
-make
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
 If you do not want or need SCTP support, you can disable it
-by setting `-DSCTP_SUPPORT=false`.
+by setting `-DSCTP_SUPPORT=OFF`.
 SCTP support is also disabled if you don't have `lksctp-tools`
 installed.
 
@@ -52,7 +52,7 @@ installed.
 Just install it using
 
 ```
-  make install
+  cmake --install build
 ```
 
 ## Usage
