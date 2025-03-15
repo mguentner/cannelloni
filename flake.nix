@@ -1,7 +1,9 @@
 {
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.nix-github-actions.url = "github:nix-community/nix-github-actions";
+  inputs.nix-github-actions.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { nixpkgs, ... }: let
+  outputs = { self, nixpkgs, nix-github-actions, ... }: let
     overlay = import ./nix/overlay.nix;
 
     supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
@@ -31,5 +33,9 @@
       tcp = nixpkgsFor.${system}.callPackage ./nix/tests/tcp.nix {};
       udp = nixpkgsFor.${system}.callPackage ./nix/tests/udp.nix {};
     });
+
+    githubActions = nix-github-actions.lib.mkGithubMatrix {
+      checks = nixpkgs.lib.getAttrs [ "x86_64-linux" ] self.checks;
+    };
   };
 }

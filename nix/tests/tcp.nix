@@ -41,8 +41,8 @@ nixosTest {
   testScript = ''
     start_all()
     node_a.wait_for_unit("cannelloni")
-    node_a.wait_for_open_port(10000)
     node_b.wait_for_unit("cannelloni")
+    node_a.wait_until_succeeds("journalctl | grep 'Got a connection from 192'")
     node_b.wait_until_succeeds("journalctl | grep 'attempt_connect:Connected'")
     
     node_a.succeed("${pkgs.can-utils}/bin/cangen vcan0 -n 1 -D 11223344DEADBEEF -L 8")
