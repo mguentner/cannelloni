@@ -6,3 +6,4 @@ cmake_install.cmake
 config.h
 cannelloni
 tags
+compile_commands.json
