@@ -92,7 +92,7 @@ int SCTPThread::start() {
 void SCTPThread::run() {
   fd_set readfds;
   ssize_t receivedBytes;
-  uint8_t buffer[m_linkMtuSize];
+  std::vector<uint8_t> buffer(m_linkMtuSize);
   struct sockaddr_storage clientAddr;
   socklen_t clientAddrLen = sizeof(struct sockaddr_storage);
 
@@ -212,8 +212,8 @@ void SCTPThread::run() {
         int flags = 0;
         memset(&sinfo, 0, sizeof(sinfo));
         /* Clear buffer */
-        memset(buffer, 0, m_linkMtuSize);
-        receivedBytes = sctp_recvmsg(m_socket, buffer, m_linkMtuSize,
+        memset(buffer.data(), 0, m_linkMtuSize);
+        receivedBytes = sctp_recvmsg(m_socket, buffer.data(), m_linkMtuSize,
                         (struct sockaddr *) &clientAddr, &clientAddrLen, &sinfo, &flags);
         if (receivedBytes < 0) {
           lerror << "recvfrom error." << std::endl;
@@ -222,7 +222,7 @@ void SCTPThread::run() {
           close(m_socket);
           continue;
         } else if (receivedBytes > 0) {
-          parsePacket(buffer, receivedBytes, &clientAddr);
+          parsePacket(buffer.data(), receivedBytes, &clientAddr);
         } else {
           m_connected  = false;
           close(m_socket);
