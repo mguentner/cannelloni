@@ -233,7 +233,13 @@ void TCPThread::flushFrameBuffer() {
   }
   uint8_t transmitBuffer[MAX_TRANSMIT_BUFFER_SIZE_BYTES];
   m_frameBuffer->swapBuffers();
+  m_frameBuffer->dropExpiredIntermediateBuffer();
   std::list<canfd_frame*> *frames = m_frameBuffer->getIntermediateBuffer();
+  if (frames->empty()) {
+    m_frameBuffer->unlockIntermediateBuffer();
+    m_frameBuffer->mergeIntermediateBuffer();
+    return;
+  }
   for (auto it = frames->begin(); it != frames->end(); it++) {
     canfd_frame* frame = *it;
     ssize_t encodedBytes = encodeFrame(transmitBuffer, frame);

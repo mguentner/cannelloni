@@ -269,8 +269,14 @@ void UDPThread::prepareBuffer() {
   m_frameBuffer->swapBuffers();
   if (m_sort)
     m_frameBuffer->sortIntermediateBuffer();
+  m_frameBuffer->dropExpiredIntermediateBuffer();
 
   std::list<canfd_frame*> *buffer = m_frameBuffer->getIntermediateBuffer();
+  if (buffer->empty()) {
+    m_frameBuffer->unlockIntermediateBuffer();
+    m_frameBuffer->mergeIntermediateBuffer();
+    return;
+  }
 
   auto overflowHandler = [this](std::list<canfd_frame*>&, std::list<canfd_frame*>::iterator it)
   {
