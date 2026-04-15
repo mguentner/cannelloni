@@ -94,6 +94,7 @@ void printUsage() {
   std::cout << "\t -4 \t\t\t use IPv4 (default)" << std::endl;
   std::cout << "\t -6 \t\t\t use IPv6" << std::endl;
   std::cout << "\t -m \t\t\t set MTU, default: 1500 bytes" << std::endl;
+  std::cout << "\t -g timeout \t\t max frame age in buffer (us), default: 1000000 (0 disables)" << std::endl;
   std::cout << "\t -f \t\t\t fork into background / daemon mode" << std::endl;
   std::cout << "\t -P \t\t\t pid file path (only in daemon mode), default: /var/run/cannelloni.pid" << std::endl;
   std::cout << "\t -h \t\t\t display this help text" << std::endl;
@@ -179,6 +180,7 @@ int main(int argc, char **argv) {
   uint16_t localPort = 20000;
   std::string canInterfaceName = "vcan0";
   uint32_t bufferTimeout = 100000;
+  uint32_t frameLifetime = 1000000;
   std::string timeoutTableFile;
   std::string pidFilePath = "/var/run/cannelloni.pid";
   /* Key is CAN ID, Value is timeout in us */
@@ -186,7 +188,7 @@ int main(int argc, char **argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  const std::string argument_options = "C:l:L:r:R:I:t:T:d:m:P:hsp46f"
+  const std::string argument_options = "C:l:L:r:R:I:t:T:d:m:g:P:hsp46f"
 #ifdef SCTP_SUPPORT
   "S:";
 #else
@@ -294,6 +296,9 @@ int main(int argc, char **argv) {
         break;
       case 'm':
         linkMtuSize = static_cast<uint16_t>(strtol(optarg, NULL, 10));
+        break;
+      case 'g':
+        frameLifetime = static_cast<uint32_t>(strtoul(optarg, NULL, 10));
         break;
       case 'f':
         forkIntoBackground = true;
@@ -487,6 +492,8 @@ int main(int argc, char **argv) {
   auto canThread = std::make_unique<CANThread>(debugOptions, canInterfaceName);
   auto netFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
   auto canFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
+  netFrameBuffer->setFrameLifetime(frameLifetime);
+  canFrameBuffer->setFrameLifetime(frameLifetime);
   netThread->setPeerThread(canThread.get());
   netThread->setFrameBuffer(netFrameBuffer.get());
   canThread->setPeerThread(netThread.get());

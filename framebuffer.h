@@ -22,6 +22,7 @@
 
 #include <list>
 #include <mutex>
+#include <unordered_map>
 #include "cannelloni.h"
 
 namespace cannelloni {
@@ -109,23 +110,36 @@ class FrameBuffer {
     /* Moves all frames back into m_framePool and sets the size to 0 */
     void reset();
 
+    /* Set maximum frame lifetime in us (0 disables age checks) */
+    void setFrameLifetime(uint64_t lifetimeUs);
+
+    uint64_t getFrameLifetime();
+
+    /* Drop expired frames from m_intermediateBuffer */
+    void dropExpiredIntermediateBuffer();
+
     void clearPool();
 
     size_t getFrameBufferSize();
 
   private:
     bool resizePool(std::size_t size, bool debug = false);
+    static size_t getFrameSize(canfd_frame *frame);
+    uint64_t getMonotonicUs() const;
+    bool isFrameExpired(canfd_frame *frame, uint64_t nowUs) const;
 
   private:
     std::list<canfd_frame*> m_framePool;
     std::list<canfd_frame*> m_buffer;
     std::list<canfd_frame*> m_intermediateBuffer;
+    std::unordered_map<canfd_frame*, uint64_t> m_frameEnqueueTimes;
 
     uint64_t m_totalAllocCount;
     /* When filling/swapping the buffers we currently need a mutex */
     std::recursive_mutex m_bufferMutex;
     std::recursive_mutex m_intermediateBufferMutex;
     std::recursive_mutex m_poolMutex;
+    std::recursive_mutex m_timestampMutex;
     /* Track current frame buffer size */
     size_t m_bufferSize;
     size_t m_intermediateBufferSize;
@@ -138,6 +152,7 @@ class FrameBuffer {
      * unlimited
      */
     size_t m_maxAllocCount;
+    uint64_t m_frameLifetimeUs;
 };
 
 }
