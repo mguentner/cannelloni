@@ -28,6 +28,8 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <thread>
+#include <sys/mman.h>
 
 #include <iomanip>
 
@@ -80,6 +82,8 @@ void printUsage() {
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
+  std::cout << "\t -a cpu_id \t\t Set the CPU affinity for the program"  << std::endl;
+  std::cout << "\t -y priority \t\t Set the priority for the program" << std::endl;
   std::cout << "\t -s           \t\t enable frame sorting" << std::endl;
   std::cout << "\t -p           \t\t no peer checking" << std::endl;
   std::cout << "\t -d [cubt]\t\t enable debug, can be any of these: " << std::endl;
@@ -168,6 +172,10 @@ int main(int argc, char **argv) {
   bool useIPv4 = true;
   bool useIPv6 = false;
   bool forkIntoBackground = false;
+  cpu_set_t cpuSet;
+  int cpuId = 0;
+  int priority = 50;
+  struct sched_param param;
   uint16_t linkMtuSize = 1500;
   TCPThreadRole tcpRole = TCP_CLIENT;
 #ifdef SCTP_SUPPORT
@@ -186,13 +194,13 @@ int main(int argc, char **argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  const std::string argument_options = "C:l:L:r:R:I:t:T:d:m:P:hsp46f"
+  const std::string argument_options = "C:l:L:r:R:I:t:T:a:y:d:m:P:hsp46f"
 #ifdef SCTP_SUPPORT
   "S:";
 #else
   ;
 #endif
-
+  mlockall(MCL_CURRENT | MCL_FUTURE);
   while ((opt = getopt(argc, argv, argument_options.c_str())) != -1) {
     switch(opt) {
       case 'C':
@@ -300,6 +308,27 @@ int main(int argc, char **argv) {
         break;
       case 'P':
         pidFilePath = std::string(optarg);
+        break;
+      case 'a':
+        cpuId = std::stoi(optarg);
+        CPU_ZERO(&cpuSet);
+        CPU_SET(cpuId, &cpuSet);
+        if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuSet) != 0) {
+            std::cerr << "Failed to set thread affinity" << std::endl;
+            return -1;
+        }
+        break;
+      case 'y':
+        priority = std::stoi(optarg);
+        if (priority < 1 || priority > 99) {
+            std::cerr << "Priority must be between 1 and 99." << std::endl;
+            return -1;
+        }
+        param.sched_priority = priority;
+        if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
+            std::cerr << "Failed to set thread priority: " << strerror(errno) << std::endl;
+            return -1;
+        }
         break;
       default:
         printUsage();
