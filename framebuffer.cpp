@@ -19,6 +19,7 @@
  */
 
 #include <cstring>
+#include <chrono>
 #include "framebuffer.h"
 #include "logging.h"
 
@@ -28,7 +29,8 @@ FrameBuffer::FrameBuffer(size_t size, size_t max) :
   m_totalAllocCount(0),
   m_bufferSize(0),
   m_intermediateBufferSize(0),
-  m_maxAllocCount(max)
+  m_maxAllocCount(max),
+  m_frameLifetimeUs(0)
 {
   resizePool(size, false);
 }
@@ -39,7 +41,7 @@ FrameBuffer::~FrameBuffer() {
 }
 
 canfd_frame* FrameBuffer::requestFrame(bool overwriteLast, bool debug) {
-  std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
+  std::unique_lock<std::recursive_mutex> poolLock(m_poolMutex);
   if (m_framePool.empty()) {
     bool resizePoolResult;
     if (m_maxAllocCount > 0) {
@@ -65,12 +67,26 @@ canfd_frame* FrameBuffer::requestFrame(bool overwriteLast, bool debug) {
         return NULL;
       }
     } else if(!resizePoolResult && overwriteLast) {
-      std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
+      std::unique_lock<std::recursive_mutex> bufferLock(m_bufferMutex, std::defer_lock);
+      std::unique_lock<std::recursive_mutex> timestampLock(m_timestampMutex, std::defer_lock);
+      std::lock(bufferLock, timestampLock);
       /*
        * We did reach the limit but we are returning the last frame in the
        * buffer. (ringbuffer behaviour)
        */
-      return requestBufferBack();
+      if (m_buffer.empty()) {
+        return NULL;
+      }
+      canfd_frame *ret = m_buffer.back();
+      m_buffer.pop_back();
+      size_t frameSize = getFrameSize(ret);
+      if (m_bufferSize >= frameSize) {
+        m_bufferSize -= frameSize;
+      } else {
+        m_bufferSize = 0;
+      }
+      m_frameEnqueueTimes.erase(ret);
+      return ret;
     }
   }
   /* If we reach this point, m_framePool is not depleted */
@@ -85,65 +101,96 @@ canfd_frame* FrameBuffer::requestFrame(bool overwriteLast, bool debug) {
 }
 
 void FrameBuffer::insertFramePool(canfd_frame *frame) {
-  std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
+  std::unique_lock<std::recursive_mutex> poolLock(m_poolMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> timestampLock(m_timestampMutex, std::defer_lock);
+  std::lock(poolLock, timestampLock);
 
+  m_frameEnqueueTimes.erase(frame);
   m_framePool.push_back(frame);
 }
 
 void FrameBuffer::insertFrame(canfd_frame *frame) {
-  std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
+  std::unique_lock<std::recursive_mutex> bufferLock(m_bufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> timestampLock(m_timestampMutex, std::defer_lock);
+  std::lock(bufferLock, timestampLock);
 
   m_buffer.push_back(frame);
-  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
-
-  /* We need one more byte for CAN_FD Frames */
-  if (frame->len & CANFD_FRAME)
-    m_bufferSize++;
+  m_bufferSize += getFrameSize(frame);
+  if (m_frameEnqueueTimes.find(frame) == m_frameEnqueueTimes.end()) {
+    m_frameEnqueueTimes[frame] = getMonotonicUs();
+  }
 }
 
 void FrameBuffer::returnFrame(canfd_frame *frame) {
-  std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
+  std::unique_lock<std::recursive_mutex> bufferLock(m_bufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> timestampLock(m_timestampMutex, std::defer_lock);
+  std::lock(bufferLock, timestampLock);
 
   m_buffer.push_front(frame);
-  m_bufferSize += CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
-  /* We need one more byte for CAN_FD Frames */
-  if (frame->len & CANFD_FRAME)
-    m_bufferSize++;
+  m_bufferSize += getFrameSize(frame);
+  if (m_frameEnqueueTimes.find(frame) == m_frameEnqueueTimes.end()) {
+    m_frameEnqueueTimes[frame] = getMonotonicUs();
+  }
 }
 
 canfd_frame* FrameBuffer::requestBufferFront() {
-  std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
+  std::unique_lock<std::recursive_mutex> bufferLock(m_bufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> poolLock(m_poolMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> timestampLock(m_timestampMutex, std::defer_lock);
+  std::lock(bufferLock, poolLock, timestampLock);
+
   if (m_buffer.empty()) {
     return NULL;
-  }
-  else {
-    canfd_frame *ret = m_buffer.front();
-    m_buffer.pop_front();
-    m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + canfd_len(ret));
-    /* We need one more byte for CAN_FD Frames */
-    if (ret->len & CANFD_FRAME)
-      m_bufferSize--;
-    return ret;
+  } else {
+    const uint64_t nowUs = getMonotonicUs();
+    while (!m_buffer.empty()) {
+      canfd_frame *ret = m_buffer.front();
+      m_buffer.pop_front();
+      size_t frameSize = getFrameSize(ret);
+      if (m_bufferSize >= frameSize) {
+        m_bufferSize -= frameSize;
+      } else {
+        m_bufferSize = 0;
+      }
+      if (isFrameExpired(ret, nowUs)) {
+        m_frameEnqueueTimes.erase(ret);
+        m_framePool.push_back(ret);
+        continue;
+      }
+      return ret;
+    }
+    return NULL;
   }
 }
 
 canfd_frame* FrameBuffer::requestBufferBack() {
-  std::lock_guard<std::recursive_mutex> lock(m_bufferMutex);
+  std::unique_lock<std::recursive_mutex> bufferLock(m_bufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> poolLock(m_poolMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> timestampLock(m_timestampMutex, std::defer_lock);
+  std::lock(bufferLock, poolLock, timestampLock);
   if (m_buffer.empty()) {
     return NULL;
-  }
-  else {
-    canfd_frame *ret = m_buffer.back();
-    m_buffer.pop_back();
-    m_bufferSize -= (CANNELLONI_FRAME_BASE_SIZE + canfd_len(ret));
-    /* We need one more byte for CAN_FD Frames */
-    if (ret->len & CANFD_FRAME)
-      m_bufferSize--;
-    return ret;
+  } else {
+    const uint64_t nowUs = getMonotonicUs();
+    while (!m_buffer.empty()) {
+      canfd_frame *ret = m_buffer.back();
+      m_buffer.pop_back();
+      size_t frameSize = getFrameSize(ret);
+      if (m_bufferSize >= frameSize) {
+        m_bufferSize -= frameSize;
+      } else {
+        m_bufferSize = 0;
+      }
+      if (isFrameExpired(ret, nowUs)) {
+        m_frameEnqueueTimes.erase(ret);
+        m_framePool.push_back(ret);
+        continue;
+      }
+      return ret;
+    }
+    return NULL;
   }
 }
-
-
 
 void FrameBuffer::swapBuffers() {
   std::unique_lock<std::recursive_mutex> lock1(m_bufferMutex, std::defer_lock);
@@ -163,8 +210,12 @@ void FrameBuffer::sortIntermediateBuffer() {
 void FrameBuffer::mergeIntermediateBuffer() {
   std::unique_lock<std::recursive_mutex> lock1(m_poolMutex, std::defer_lock);
   std::unique_lock<std::recursive_mutex> lock2(m_intermediateBufferMutex, std::defer_lock);
-  std::lock(lock1, lock2);
+  std::unique_lock<std::recursive_mutex> lock3(m_timestampMutex, std::defer_lock);
+  std::lock(lock1, lock2, lock3);
 
+  for (canfd_frame *frame : m_intermediateBuffer) {
+    m_frameEnqueueTimes.erase(frame);
+  }
   m_framePool.splice(m_framePool.end(), m_intermediateBuffer);
   m_intermediateBufferSize = 0;
 }
@@ -172,14 +223,25 @@ void FrameBuffer::mergeIntermediateBuffer() {
 void FrameBuffer::returnIntermediateBuffer(std::list<canfd_frame*>::iterator start) {
   std::unique_lock<std::recursive_mutex> lock1(m_intermediateBufferMutex, std::defer_lock);
   std::unique_lock<std::recursive_mutex> lock2(m_bufferMutex, std::defer_lock);
-  std::lock(lock1,lock2);
+  std::unique_lock<std::recursive_mutex> lock3(m_timestampMutex, std::defer_lock);
+  std::lock(lock1, lock2, lock3);
 
   /* Don't splice since we need to keep track of the size */
   for (std::list<canfd_frame*>::iterator it = start;
                                          it != m_intermediateBuffer.end();) {
     canfd_frame *frame = *it;
     it = m_intermediateBuffer.erase(it);
-    returnFrame(frame);
+    size_t frameSize = getFrameSize(frame);
+    if (m_intermediateBufferSize >= frameSize) {
+      m_intermediateBufferSize -= frameSize;
+    } else {
+      m_intermediateBufferSize = 0;
+    }
+    m_buffer.push_front(frame);
+    m_bufferSize += frameSize;
+    if (m_frameEnqueueTimes.find(frame) == m_frameEnqueueTimes.end()) {
+      m_frameEnqueueTimes[frame] = getMonotonicUs();
+    }
   }
 }
 
@@ -204,24 +266,22 @@ void FrameBuffer::reset() {
   std::unique_lock<std::recursive_mutex> lock1(m_poolMutex, std::defer_lock);
   std::unique_lock<std::recursive_mutex> lock2(m_bufferMutex, std::defer_lock);
   std::unique_lock<std::recursive_mutex> lock3(m_intermediateBufferMutex, std::defer_lock);
-  std::lock(lock1, lock2, lock3);
+  std::unique_lock<std::recursive_mutex> lock4(m_timestampMutex, std::defer_lock);
+  std::lock(lock1, lock2, lock3, lock4);
 
   /* Splice everything back into the pool */
   m_framePool.splice(m_framePool.end(), m_intermediateBuffer);
   m_framePool.splice(m_framePool.end(), m_buffer);
 
+  m_frameEnqueueTimes.clear();
   m_intermediateBufferSize = 0;
   m_bufferSize = 0;
 }
 
 void FrameBuffer::clearPool() {
-  std::unique_lock<std::recursive_mutex> lock1(m_poolMutex, std::defer_lock);
-  std::unique_lock<std::recursive_mutex> lock2(m_bufferMutex, std::defer_lock);
-  std::unique_lock<std::recursive_mutex> lock3(m_intermediateBufferMutex, std::defer_lock);
-  std::lock(lock1, lock2, lock3);
-
   reset();
 
+  std::lock_guard<std::recursive_mutex> lock(m_poolMutex);
   for (canfd_frame *f : m_framePool) {
     delete f;
   }
@@ -245,4 +305,67 @@ bool FrameBuffer::resizePool(std::size_t size, bool debug) {
   if (debug)
     linfo << "New Poolsize:" << m_totalAllocCount << std::endl;
   return true;
+}
+
+void FrameBuffer::setFrameLifetime(uint64_t lifetimeUs) {
+  std::lock_guard<std::recursive_mutex> lock(m_timestampMutex);
+  m_frameLifetimeUs = lifetimeUs;
+}
+
+uint64_t FrameBuffer::getFrameLifetime() {
+  std::lock_guard<std::recursive_mutex> lock(m_timestampMutex);
+  return m_frameLifetimeUs;
+}
+
+void FrameBuffer::dropExpiredIntermediateBuffer() {
+  std::unique_lock<std::recursive_mutex> intermediateBufferLock(m_intermediateBufferMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> poolLock(m_poolMutex, std::defer_lock);
+  std::unique_lock<std::recursive_mutex> timestampLock(m_timestampMutex, std::defer_lock);
+  std::lock(intermediateBufferLock, poolLock, timestampLock);
+
+  if (m_frameLifetimeUs == 0) {
+    return;
+  }
+
+  const uint64_t nowUs = getMonotonicUs();
+  for (auto it = m_intermediateBuffer.begin(); it != m_intermediateBuffer.end();) {
+    canfd_frame *frame = *it;
+    if (!isFrameExpired(frame, nowUs)) {
+      ++it;
+      continue;
+    }
+    size_t frameSize = getFrameSize(frame);
+    if (m_intermediateBufferSize >= frameSize) {
+      m_intermediateBufferSize -= frameSize;
+    } else {
+      m_intermediateBufferSize = 0;
+    }
+    it = m_intermediateBuffer.erase(it);
+    m_frameEnqueueTimes.erase(frame);
+    m_framePool.push_back(frame);
+  }
+}
+
+size_t FrameBuffer::getFrameSize(canfd_frame *frame) {
+  size_t frameSize = CANNELLONI_FRAME_BASE_SIZE + canfd_len(frame);
+  if (frame->len & CANFD_FRAME) {
+    frameSize++;
+  }
+  return frameSize;
+}
+
+uint64_t FrameBuffer::getMonotonicUs() const {
+  auto now = std::chrono::steady_clock::now().time_since_epoch();
+  return std::chrono::duration_cast<std::chrono::microseconds>(now).count();
+}
+
+bool FrameBuffer::isFrameExpired(canfd_frame *frame, uint64_t nowUs) const {
+  if (m_frameLifetimeUs == 0) {
+    return false;
+  }
+  auto it = m_frameEnqueueTimes.find(frame);
+  if (it == m_frameEnqueueTimes.end()) {
+    return false;
+  }
+  return nowUs > it->second && (nowUs - it->second) > m_frameLifetimeUs;
 }
