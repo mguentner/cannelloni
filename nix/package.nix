@@ -1,11 +1,21 @@
-{ stdenv, cmake, lib, lksctp-tools }:
+{
+  stdenv,
+  cmake,
+  lib,
+  lksctp-tools,
+}:
 stdenv.mkDerivation {
   name = "cannelloni";
-  version = "1.1.0";
+  version = "2.0.1";
 
-  src = builtins.filterSource (path: type: !(lib.strings.hasSuffix "nix" path || lib.strings.hasSuffix "flake.lock" path)) ( lib.cleanSource ../.);
+  src = builtins.filterSource (
+    path: type: !(lib.strings.hasSuffix "nix" path || lib.strings.hasSuffix "flake.lock" path)
+  ) (lib.cleanSource ../.);
 
-  propagatedBuildInputs = [ cmake lksctp-tools ];
+  propagatedBuildInputs = [
+    cmake
+    lksctp-tools
+  ];
   meta = with lib; {
     description = "A SocketCAN over Ethernet Tunnel";
     homepage = "https://github.com/mguentner/cannelloni";
