@@ -74,9 +74,9 @@ void printUsage() {
   std::cout << "\t\t\t c : act as client" << std::endl;
   std::cout << "\t\t\t s : act as server" << std::endl;
   std::cout << "\t -l PORT \t\t listening port, default: 20000" << std::endl;
-  std::cout << "\t -L ADDRESS \t\t listening ADDRESS, default: 0.0.0.0" << std::endl;
+  std::cout << "\t -L ADDRESS \t\t listening ADDRESS, default: 0.0.0.0, ::" << std::endl;
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
-  std::cout << "\t -R ADDRESS \t\t remote ADDRESS (mandatory for UDP), default: 127.0.0.1" << std::endl;
+  std::cout << "\t -R ADDRESS \t\t remote ADDRESS (mandatory for UDP), default: 127.0.0.1, ::1" << std::endl;
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
@@ -352,6 +352,14 @@ int main(int argc, char **argv) {
     }
   }
 
+  if (strlen(remoteIP) == 0) {
+    if (useIPv4) {
+      strcpy(remoteIP, "127.0.0.1");
+    } else {
+      strcpy(remoteIP, "::1");
+    }
+  }
+
   if (!timeoutTableFile.empty()) {
     CSVMapParser<uint32_t,uint32_t> mapParser;
     if(!mapParser.open(timeoutTableFile)) {
@@ -417,7 +425,7 @@ int main(int argc, char **argv) {
     addressFamily = AF_INET6;
   }
 
-  if (remoteIPSupplied && !parseAddress(remoteIP, (struct sockaddr *) &remoteAddr, addressFamily)) {
+  if (!parseAddress(remoteIP, (struct sockaddr *) &remoteAddr, addressFamily)) {
     lerror << "Invalid remote address";
     return -1;
   }
