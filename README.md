@@ -162,6 +162,35 @@ INFO:cannelloni.cpp[155]:main:Other Frames:100000 us.
 [...]
 ```
 
+### Dropping CAN frames
+
+When cannelloni cannot write a frame to the CAN interface it keeps the frame and
+retries. If the bus is bus-off / error-passive this is detected via CAN error
+frames and the backlog is dropped immediately. However, a physically broken bus
+does not always reach that state: an unterminated, floating or otherwise stuck bus
+makes the controller defer transmission indefinitely, so no error frame is ever
+emitted and `write()` only ever returns `ENOBUFS`. In that case cannelloni would
+buffer frames for as long as the bus is broken and flush the stale backlog
+once it recovers. These stale frames are most likely not relevant anymore.
+While cannelloni will stop sending and eventually dropping frames, there
+are may still be stuck frames in the tx buffer of the kernel, you can
+at least lower the amount by setting `txqueuelen` to `1`.
+
+The `-x <timeout>` option limits this. If a frame stays undeliverable for longer
+than `timeout` microseconds it is dropped instead of buffered, while cannelloni
+keeps probing the bus and resumes transmission automatically once it recovers.
+The default is `2000000` (2 seconds).
+
+Set `-x 0` to disable the staleness drop (pre-2.1 behavior).
+
+```
+cannelloni -I can0 -R 192.168.0.3 -x 2000000
+```
+This drops CAN frames that cannot not be sent within 2 seconds.
+
+Keep in mind that this may also happen when the target bus has a high load which
+results in low priority frames being dropped. Adjust the value accordingly.
+
 # Transports
 
 ## UDP
@@ -298,7 +327,7 @@ for your work.
 
 # License
 
-Copyright 2014-2023 Maximilian Güntner <code@mguentner.de>
+Copyright 2014-2026 Maximilian Güntner <code@mguentner.de>
 
 cannelloni is licensed under the GPL, version 2. See gpl-2.0.txt for
 more information.

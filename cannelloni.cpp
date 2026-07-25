@@ -1,7 +1,7 @@
 /*
  * This file is part of cannelloni, a SocketCAN over Ethernet tunnel.
  *
- * Copyright (C) 2014-2023 Maximilian Güntner <code@mguentner.de>
+ * Copyright (C) 2014-2026 Maximilian Güntner <code@mguentner.de>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 as
@@ -77,6 +77,7 @@ void printUsage() {
   std::cout << "\t -R ADDRESS \t\t remote ADDRESS (mandatory for UDP), default: 127.0.0.1, ::1" << std::endl;
   std::cout << "\t -I INTERFACE \t\t can interface, default: vcan0" << std::endl;
   std::cout << "\t -t timeout \t\t buffer timeout for can messages (us), default: 100000" << std::endl;
+  std::cout << "\t -x timeout \t\t drop CAN frames undeliverable for longer than timeout (us), 0 disables, default: 2000000" << std::endl;
   std::cout << "\t -T table.csv \t\t path to csv with individual timeouts" << std::endl;
   std::cout << "\t -s           \t\t enable frame sorting" << std::endl;
   std::cout << "\t -p           \t\t no peer checking" << std::endl;
@@ -177,6 +178,7 @@ int main(int argc, char **argv) {
   uint16_t localPort = 20000;
   std::string canInterfaceName = "vcan0";
   uint32_t bufferTimeout = 100000;
+  uint32_t canTxStaleTimeout = 2000000; /* 2 s */
   std::string timeoutTableFile;
   std::string pidFilePath = "/var/run/cannelloni.pid";
   /* Key is CAN ID, Value is timeout in us */
@@ -184,7 +186,7 @@ int main(int argc, char **argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  const std::string argument_options = "C:l:L:r:R:I:t:T:d:m:P:hsp46f"
+  const std::string argument_options = "C:l:L:r:R:I:t:x:T:d:m:P:hsp46f"
 #ifdef SCTP_SUPPORT
   "S:";
 #else
@@ -260,6 +262,9 @@ int main(int argc, char **argv) {
         break;
       case 't':
         bufferTimeout = static_cast<uint32_t>(strtoul(optarg, NULL, 10));
+        break;
+      case 'x':
+        canTxStaleTimeout = static_cast<uint32_t>(strtoul(optarg, NULL, 10));
         break;
       case 'T':
         timeoutTableFile = std::string(optarg);
@@ -440,7 +445,7 @@ int main(int argc, char **argv) {
     ((struct sockaddr_in6 *) &remoteAddr)->sin6_port = htons(remotePort);
     ((struct sockaddr_in6 *) &localAddr)->sin6_port = htons(localPort);
   }
-  
+
   if (forkIntoBackground) {
     std::cout << "cannelloni is forking into background." << std::endl;
     daemonize(pidFilePath);
@@ -464,7 +469,7 @@ int main(int argc, char **argv) {
 #ifdef SCTP_SUPPORT
     auto sctpThread = std::make_unique<SCTPThread>(debugOptions, SCTPThreadParams {
       .remoteAddr = remoteAddr,
-      .localAddr = localAddr,      
+      .localAddr = localAddr,
       .addressFamily = addressFamily,
       .sortFrames = sortUDP,
       .checkPeer = checkPeer,
@@ -476,21 +481,22 @@ int main(int argc, char **argv) {
     netThread = std::move(sctpThread);
 #endif
   } else {
-    
+
     auto udpThread = std::make_unique<UDPThread>(debugOptions, UDPThreadParams{
       .remoteAddr = remoteAddr,
-      .localAddr = localAddr,      
+      .localAddr = localAddr,
       .addressFamily = addressFamily,
       .sortFrames = sortUDP,
       .checkPeer = checkPeer,
       .linkMtuSize = linkMtuSize,
     });
-    
+
     udpThread.get()->setTimeout(bufferTimeout);
     udpThread.get()->setTimeoutTable(timeoutTable);
     netThread = std::move(udpThread);
   }
   auto canThread = std::make_unique<CANThread>(debugOptions, canInterfaceName);
+  canThread->setTxStaleTimeout(canTxStaleTimeout);
   auto netFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
   auto canFrameBuffer = std::make_unique<FrameBuffer>(1000,16000);
   netThread->setPeerThread(canThread.get());
