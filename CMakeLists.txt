@@ -38,6 +38,10 @@ CONFIGURE_FILE(
 
 include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR})
 
+# Handle pthread support
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
+
 add_executable(cannelloni cannelloni.cpp)
 add_library(addsources STATIC
             connection.cpp
@@ -73,7 +77,7 @@ if(SCTP_SUPPORT)
     target_link_libraries(addsources sctpthread)
 endif(SCTP_SUPPORT)
 set_target_properties(addsources PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(cannelloni addsources cannelloni-common-static pthread)
+target_link_libraries(cannelloni addsources cannelloni-common-static Threads::Threads)
 target_compile_features(cannelloni PRIVATE cxx_auto_type)
 target_compile_features(addsources PRIVATE cxx_auto_type)
 
