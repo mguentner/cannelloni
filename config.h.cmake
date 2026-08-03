@@ -21,3 +21,5 @@
 #pragma once
 
 #cmakedefine SCTP_SUPPORT
+
+#define CANNELLONI_VERSION "@CMAKE_PROJECT_VERSION@"
