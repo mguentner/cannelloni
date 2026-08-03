@@ -32,7 +32,7 @@ if(NOT SCTP_FOUND AND SCTP_SUPPORT)
   message(STATUS "Install lksctp-tools for SCTP.")
 endif(NOT SCTP_FOUND AND SCTP_SUPPORT)
 
-CONFIGURE_FILE(
+configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
   ${CMAKE_CURRENT_BINARY_DIR}/config.h
 )
