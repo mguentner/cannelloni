@@ -11,3 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix an issue when no remote address was provided (`-R`) which lead to incorrect
   connections. Now it is `127.0.0.1` / `::1` as written in the usage (`--help`).
+
+### Changed
+
+- CAN frames that stay undeliverable on a stuck bus are now dropped after a
+  staleness timeout instead of being buffered indefinitely and flushed once the
+  bus recovers. The timeout is configurable via the new `-x <microseconds>`
+  option and defaults to `2000000` (2 seconds); set `-x 0` to restore the
+  previous behavior. #88

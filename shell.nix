@@ -1,7 +1,12 @@
-{ pkgs ? import <nixpkgs> {}}:
+{
+  pkgs ? import <nixpkgs> { },
+}:
 with pkgs;
 mkShell {
   buildInputs = [
-    bashInteractive cmake lksctp-tools
+    bashInteractive
+    cmake
+    lksctp-tools
+    can-utils
   ];
 }

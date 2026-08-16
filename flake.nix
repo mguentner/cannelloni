@@ -52,6 +52,7 @@
         sctp = nixpkgsFor.${system}.callPackage ./nix/tests/sctp.nix { };
         tcp = nixpkgsFor.${system}.callPackage ./nix/tests/tcp.nix { };
         udp = nixpkgsFor.${system}.callPackage ./nix/tests/udp.nix { };
+        netdown = nixpkgsFor.${system}.callPackage ./nix/tests/netdown.nix { };
       });
 
       githubActions = nix-github-actions.lib.mkGithubMatrix {
