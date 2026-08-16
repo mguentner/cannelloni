@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0]
+
 ### Fixed
 
 - Fix an issue when no remote address was provided (`-R`) which lead to incorrect
@@ -19,3 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bus recovers. The timeout is configurable via the new `-x <microseconds>`
   option and defaults to `2000000` (2 seconds); set `-x 0` to restore the
   previous behavior. #88
+- Find and link pthreads using CMake tools
+- cannelloni version is now defined using CMake
