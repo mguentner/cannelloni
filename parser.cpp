@@ -17,6 +17,15 @@ ssize_t parseCANFrame(canfd_frame* frame, const uint8_t* rawData, const uint8_t*
   frame->len = *rawData;
   /* += 1 */
   rawData += sizeof (frame->len);
+  /*
+   * Reject invalid frame lengths larger than CANFD_MAX_DLEN to prevent
+   * out-of-bounds writes
+   */
+  if (canfd_len(frame) > CANFD_MAX_DLEN)
+  {
+      frame->len = 0;
+      return -1;
+  }
   /* If this is a CAN FD frame, also retrieve the flags */
   if (frame->len & CANFD_FRAME)
   {
