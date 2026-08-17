@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2]
+
+### Fixed
+
+- Fix an issue in the network parser code to prevent out-of-bound writes.
+  An attacker could send malicious packages to a cannelloni instance and
+  cause it to crash, resulting in a DoS. CVE-2026-37539
+
 ## [2.1.1]
 
 Maintenance release as initially 2.1.0 pointed to a valid but not the

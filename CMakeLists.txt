@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(cannelloni VERSION 2.1.1 LANGUAGES CXX)
+project(cannelloni VERSION 2.1.2 LANGUAGES CXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
