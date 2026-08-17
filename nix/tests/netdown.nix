@@ -49,6 +49,7 @@ testers.nixosTest {
 
     # Interface down: frames must be dropped, not buffered forever
     node_b.succeed("${pkgs.iproute2}/bin/ip link set vcan0 down")
+    #node_b.succeed("sleep 1")
 
     # Generate frames on node_a. They travel over UDP to node_b, whose CANThread
     # attempts to write them to the down vcan0 and must drop them (ENETDOWN),
