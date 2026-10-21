@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Enable TCP keepalive to prevent dead peer blocking reconnects, values are static
+  for now, probing will start after 15s of silence, disconnect after ~ 21s
+
 ## [2.1.3]
 
 ### Fixed
