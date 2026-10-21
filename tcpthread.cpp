@@ -251,6 +251,23 @@ void TCPThread::flushFrameBuffer() {
 bool TCPThread::setupSocket() {
   const int nagle = 0;
   const int min_window_size = 1;
+  /*
+   * Detect a dead peer. A side that only receives (e.g. the server feeding a vcan)
+   * never writes, so if the peer's FIN/RST is lost (link down, ARP conflict) it keeps
+   * the dead connection forever and the peer's reconnect waits in the accept queue.
+   * Probe after 5 s of silence, every 2 s, and give up after 3 misses (about 11 s).
+   */
+  const int keepalive = 1;
+  const int keepidle = 5;
+  const int keepintvl = 2;
+  const int keepcnt = 3;
+  if (setsockopt(m_socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) ||
+      setsockopt(m_socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle)) ||
+      setsockopt(m_socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl)) ||
+      setsockopt(m_socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt))) {
+    lerror << "Could not enable TCP keepalive." << std::endl;
+    return false;
+  }
   if (setsockopt(m_socket, IPPROTO_TCP, TCP_WINDOW_CLAMP, &min_window_size, sizeof(min_window_size))) {
     lerror << "Could not set window size to " << min_window_size << std::endl;
     return false;
