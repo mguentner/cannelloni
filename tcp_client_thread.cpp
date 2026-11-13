@@ -45,9 +45,6 @@ bool TCPClientThread::attempt_connect() {
   if (!setupSocket()) {
     return false;
   }
-  if (!setupPipe()) {
-    return false;
-  }
   linfo << "Connecting to " << formatSocketAddress(getSocketAddress(&m_remoteAddr)) << "..." << std::endl;
   if (connect(m_socket, (struct sockaddr *)&m_remoteAddr, sizeof(m_remoteAddr)) < 0) {
     close(m_socket);

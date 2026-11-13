@@ -70,7 +70,16 @@ TCPThread::TCPThread(const struct debugOptions_t &debugOptions,
   memcpy(&m_localAddr, &params.localAddr, sizeof(struct sockaddr_storage));
 }
 
+/* Not closed in run(), as the CAN thread may signal the pipe until it is stopped */
+TCPThread::~TCPThread() {
+  close(m_framebufferHasDataPipe[SIGNAL_PIPE_READ]);
+  close(m_framebufferHasDataPipe[SIGNAL_PIPE_WRITE]);
+}
+
 int TCPThread::start() {
+  if (!setupPipe()) {
+    return -1;
+  }
   return Thread::start();
 }
 
@@ -203,8 +212,6 @@ void TCPThread::run() {
 void TCPThread::disconnect() {
   m_connect_state = DISCONNECTED;
   close(m_socket);
-  close(m_framebufferHasDataPipe[SIGNAL_PIPE_READ]);
-  close(m_framebufferHasDataPipe[SIGNAL_PIPE_WRITE]);
 }
 
 void TCPThread::transmitFrame(canfd_frame *frame) {

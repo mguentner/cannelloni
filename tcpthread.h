@@ -54,6 +54,7 @@ namespace cannelloni {
     public:
       TCPThread(const struct debugOptions_t &debugOptions,
                 const struct TCPThreadParams &params);
+      virtual ~TCPThread();
 
       virtual int start();
       virtual void cleanup() = 0;
@@ -83,7 +84,7 @@ namespace cannelloni {
       struct sockaddr_storage m_remoteAddr;
       int m_addressFamily;
 
-      int m_framebufferHasDataPipe[2];
+      int m_framebufferHasDataPipe[2] = { -1, -1 };
       Decoder m_decoder;
   };
 
