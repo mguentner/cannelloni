@@ -243,14 +243,14 @@ void TCPThread::decodeChunk(TCPConnection &connection, ssize_t len) {
   if (decoder.expectedBytes == 0) {
     connection.rxCount++;
     m_rxCount++;
-    forwardFrame(&decoder.tempFrame);
+    forwardFrame(connection, &decoder.tempFrame);
     startNextFrame(decoder);
   } else if (decoder.expectedBytes == -1) {
     closeConnection(connection, "decoder error");
   }
 }
 
-void TCPThread::forwardFrame(canfd_frame *frame) {
+void TCPThread::forwardFrame(TCPConnection &source, canfd_frame *frame) {
   canfd_frame *frameBufferFrame = m_peerThread->getFrameBuffer()->requestFrame(true, m_debugOptions.buffer);
   if (frameBufferFrame != NULL) {
     memcpy(frameBufferFrame, frame, sizeof(*frame));
@@ -258,6 +258,7 @@ void TCPThread::forwardFrame(canfd_frame *frame) {
   } else {
     lerror << "Dropping frame due to framebuffer issue." << std::endl;
   }
+  sendFrame(frame, &source);
 }
 
 void TCPThread::transmitFrame(canfd_frame *frame) {
@@ -281,23 +282,24 @@ void TCPThread::flushFrameBuffer() {
   m_frameBuffer->swapBuffers();
   std::list<canfd_frame*> *frames = m_frameBuffer->getIntermediateBuffer();
   for (auto it = frames->begin(); it != frames->end(); it++) {
-    sendFrame(*it);
+    sendFrame(*it, NULL);
   }
   m_frameBuffer->unlockIntermediateBuffer();
   m_frameBuffer->mergeIntermediateBuffer();
 }
 
-void TCPThread::sendFrame(canfd_frame *frame) {
+void TCPThread::sendFrame(canfd_frame *frame, const TCPConnection *except) {
   uint8_t transmitBuffer[MAX_TRANSMIT_BUFFER_SIZE_BYTES];
   ssize_t encodedBytes = encodeFrame(transmitBuffer, frame);
   for (TCPConnection &connection : m_connections) {
-    if (connection.state == NEGOTIATED) {
+    if (connection.state == NEGOTIATED && &connection != except) {
       ssize_t bytesWritten = send(connection.socket, transmitBuffer, encodedBytes, MSG_NOSIGNAL);
       if (bytesWritten == encodedBytes) {
         connection.txCount++;
         m_txCount++;
       } else {
-        closeConnection(connection, bytesWritten < 0 ? strerror(errno) : "partial send");
+        closeConnection(connection, bytesWritten >= 0 || errno == EAGAIN || errno == EWOULDBLOCK
+                                    ? "send buffer full" : strerror(errno));
       }
     }
   }

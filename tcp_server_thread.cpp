@@ -23,6 +23,7 @@
 #include "tcpthread.h"
 #include <arpa/inet.h>
 #include <cstring>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -32,7 +33,8 @@ using namespace cannelloni;
 TCPServerThread::TCPServerThread(const struct debugOptions_t &debugOptions,
                                  const struct TCPServerThreadParams &params)
   : TCPThread(debugOptions, params.toTCPThreadParams()),
-  m_checkPeerConnect(params.checkPeer)
+  m_checkPeerConnect(params.checkPeer),
+  m_maxConnections(params.maxConnections)
 {
 
 }
@@ -61,13 +63,13 @@ int TCPServerThread::start() {
     lerror << "Could not listen" << std::endl;
     return -1;
   }
-  linfo << "Waiting for a client to connect." << std::endl;
+  linfo << "Waiting for clients to connect." << std::endl;
   return TCPThread::start();
 }
 
 int TCPServerThread::listenSocket() {
-  /* Further clients wait in the listen backlog until the connection closes */
-  if (m_connections.empty()) {
+  /* Further clients wait in the listen backlog until a connection closes */
+  if (m_connections.size() < m_maxConnections) {
     return m_serverSocket;
   }
   return -1;
@@ -99,6 +101,17 @@ int TCPServerThread::attempt_connect() {
   linfo << "Got a connection from " << formatSocketAddress(getSocketAddress(&connAddr)) << std::endl;
   /* At this point we have a valid connection */
   if (!setupSocket(socket)) {
+    close(socket);
+    return -1;
+  }
+  /*
+   * A client that cannot keep up must not block the others. Sends do not
+   * wait, and a client is disconnected once its send buffer is full.
+   */
+  const int sendBufferSize = SEND_BUFFER_SIZE_BYTES;
+  if (setsockopt(socket, SOL_SOCKET, SO_SNDBUF, &sendBufferSize, sizeof(sendBufferSize)) ||
+      fcntl(socket, F_SETFL, fcntl(socket, F_GETFL) | O_NONBLOCK)) {
+    lerror << "Could not make the client socket non-blocking." << std::endl;
     close(socket);
     return -1;
   }

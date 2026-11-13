@@ -71,6 +71,7 @@ void printUsage() {
   std::cout << "\t -C [cs] \t\t enable TCP transport." << std::endl;
   std::cout << "\t\t\t c : act as client" << std::endl;
   std::cout << "\t\t\t s : act as server" << std::endl;
+  std::cout << "\t -c NUM \t\t max. number of TCP clients (TCP server only), at most " << MAX_TCP_CLIENTS << ", default: 1" << std::endl;
   std::cout << "\t -l PORT \t\t listening port, default: 20000" << std::endl;
   std::cout << "\t -L ADDRESS \t\t listening ADDRESS, default: 0.0.0.0, ::" << std::endl;
   std::cout << "\t -r PORT \t\t remote port, default: 20000" << std::endl;
@@ -162,6 +163,7 @@ int main(int argc, char **argv) {
   bool remoteIPSupplied = false;
   bool sortUDP = false;
   bool checkPeer = true;
+  size_t maxTCPClients = 1;
   bool useTCP = false;
   bool useSCTP = false;
   bool useIPv4 = true;
@@ -186,7 +188,7 @@ int main(int argc, char **argv) {
 
   struct debugOptions_t debugOptions = { /* can */ 0, /* udp */ 0, /* buffer */ 0, /* timer */ 0 };
 
-  const std::string argument_options = "C:l:L:r:R:I:t:x:T:d:m:P:hsp46f"
+  const std::string argument_options = "C:c:l:L:r:R:I:t:x:T:d:m:P:hsp46f"
 #ifdef SCTP_SUPPORT
   "S:";
 #else
@@ -242,6 +244,9 @@ int main(int argc, char **argv) {
             printUsage();
             return -1;
 #endif
+      case 'c':
+        maxTCPClients = strtoul(optarg, NULL, 10);
+        break;
       case 'l':
         localPort = strtoul(optarg, NULL, 10);
         break;
@@ -327,6 +332,13 @@ int main(int argc, char **argv) {
   if (!remoteIPSupplied && !useSCTP && !useTCP) {
     std::cout << "Usage Error: " << std::endl
               << "Remote IP not supplied" << std::endl
+              << std::endl;
+    printUsage();
+    return -1;
+  }
+  if (maxTCPClients == 0 || maxTCPClients > MAX_TCP_CLIENTS) {
+    std::cout << "Usage Error: " << std::endl
+              << "-c only accepts 1 to " << MAX_TCP_CLIENTS << " TCP clients" << std::endl
               << std::endl;
     printUsage();
     return -1;
@@ -457,7 +469,8 @@ int main(int argc, char **argv) {
         .remoteAddr = remoteAddr,
         .localAddr = localAddr,
         .addressFamily = addressFamily,
-        .checkPeer = checkPeer
+        .checkPeer = checkPeer,
+        .maxConnections = maxTCPClients
       });
   } else if (useTCP && tcpRole == TCP_CLIENT) {
     netThread = std::make_unique<TCPClientThread>(debugOptions, TCPThreadParams {

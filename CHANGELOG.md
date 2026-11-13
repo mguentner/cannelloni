@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The TCP server can accept multiple clients with `-c NUM`. It then acts
+  like a shared CAN bus: frames from the CAN interface go to every client,
+  and frames from a client go to the CAN interface and the other clients.
+  The server now disconnects a client that cannot keep up, also with the
+  default single client, instead of blocking.
+
 ### Fixed
 
 - Enable TCP keepalive to prevent dead peer blocking reconnects, values are static

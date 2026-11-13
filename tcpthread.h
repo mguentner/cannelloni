@@ -32,6 +32,10 @@
 #include <sys/socket.h>
 
 #define SELECT_TIMEOUT 500000
+/* A client whose unsent data outgrows this gets disconnected */
+#define SEND_BUFFER_SIZE_BYTES 65536
+/* Keeps client sockets below FD_SETSIZE, which select() requires */
+#define MAX_TCP_CLIENTS 100
 #define SIGNAL_PIPE_READ 0
 #define SIGNAL_PIPE_WRITE 1
 
@@ -66,6 +70,11 @@ namespace cannelloni {
     uint64_t txCount;
   };
 
+  /*
+   * Frames from the CAN bus go to every connection. Frames from a
+   * connection go to the CAN bus and to every other connection, as if
+   * all peers were attached to the same bus.
+   */
   class TCPThread : public ConnectionThread {
     public:
       TCPThread(const struct debugOptions_t &debugOptions,
@@ -96,8 +105,8 @@ namespace cannelloni {
       void receive(TCPConnection &connection);
       void checkProtocol(TCPConnection &connection);
       void decodeChunk(TCPConnection &connection, ssize_t len);
-      void forwardFrame(canfd_frame *frame);
-      void sendFrame(canfd_frame *frame);
+      void forwardFrame(TCPConnection &source, canfd_frame *frame);
+      void sendFrame(canfd_frame *frame, const TCPConnection *except);
       void flushFrameBuffer();
       bool setupPipe();
 
@@ -122,6 +131,7 @@ namespace cannelloni {
     struct sockaddr_storage &localAddr;
     int addressFamily;
     bool checkPeer;
+    size_t maxConnections;
     
     public:
 
@@ -146,6 +156,7 @@ namespace cannelloni {
 
     private:
       bool m_checkPeerConnect;
+      size_t m_maxConnections;
   };
 
   class TCPClientThread : public TCPThread {
