@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such as usb_8dev report this only as a warning state, so all frames
   sent to the bus were dropped until cannelloni was restarted. Receive
   errors alone no longer stop transmission.
+- A TCP peer disconnecting during a send no longer terminates cannelloni
+  with SIGPIPE.
 
 ## [2.1.3]
 
