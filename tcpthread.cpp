@@ -89,7 +89,7 @@ void TCPThread::run() {
       bool connect_successful = attempt_connect();
       if (connect_successful) {
         m_connect_state = CONNECTED;
-        ssize_t res = write(m_socket, protocolVersionBuffer, sizeof(protocolVersionBuffer)-1);
+        ssize_t res = send(m_socket, protocolVersionBuffer, sizeof(protocolVersionBuffer)-1, MSG_NOSIGNAL);
         if (res != sizeof(protocolVersionBuffer)-1) {
           lerror << "write error could not announce protocol" << std::endl;
           disconnect();
@@ -237,7 +237,7 @@ void TCPThread::flushFrameBuffer() {
   for (auto it = frames->begin(); it != frames->end(); it++) {
     canfd_frame* frame = *it;
     ssize_t encodedBytes = encodeFrame(transmitBuffer, frame);
-    ssize_t bytesWritten = send(m_socket, transmitBuffer, encodedBytes, 0);
+    ssize_t bytesWritten = send(m_socket, transmitBuffer, encodedBytes, MSG_NOSIGNAL);
     if (encodedBytes != bytesWritten) {
       disconnect();
       break;

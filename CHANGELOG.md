@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A TCP peer disconnecting during a send no longer terminates cannelloni
+  with SIGPIPE.
+
 ## [2.1.3]
 
 ### Fixed
