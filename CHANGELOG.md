@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A TCP peer disconnecting during a send no longer terminates cannelloni
   with SIGPIPE.
+- The TCP client no longer leaks file descriptors while it retries a
+  connection.
 
 ## [2.1.3]
 

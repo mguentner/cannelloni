@@ -111,9 +111,6 @@ bool TCPServerThread::attempt_connect() {
   if (!setupSocket()) {
     return false;
   }
-  if (!setupPipe()) {
-    return false;
-  }
   return true;
 }
 
