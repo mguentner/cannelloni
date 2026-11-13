@@ -57,37 +57,30 @@ int TCPServerThread::start() {
     lerror << "Invalid address family" << m_addressFamily <<  std::endl;
     return -1;
   }
+  if (listen(m_serverSocket, SOMAXCONN) < 0) {
+    lerror << "Could not listen" << std::endl;
+    return -1;
+  }
+  linfo << "Waiting for a client to connect." << std::endl;
   return TCPThread::start();
 }
 
-bool TCPServerThread::attempt_connect() {
+int TCPServerThread::listenSocket() {
+  /* Further clients wait in the listen backlog until the connection closes */
+  if (m_connections.empty()) {
+    return m_serverSocket;
+  }
+  return -1;
+}
+
+int TCPServerThread::attempt_connect() {
   struct sockaddr_storage connAddr;
   socklen_t connAddrLen = sizeof(connAddr);
-  fd_set readfds;
-  struct timeval timeout;
 
-  listen(m_serverSocket, 1);
-  FD_ZERO(&readfds);
-  FD_SET(m_serverSocket, &readfds);
-
-  linfo << "Waiting for a client to connect." << std::endl;
-  /* Set Timeout to 1 second */
-  timeout.tv_sec = 1;
-  timeout.tv_usec = 0;
-  int ret = select(m_serverSocket+1, &readfds, NULL, NULL, &timeout);
-  if (ret < 0) {
-    lerror << "select error" << std::endl;
-    return false;
-  } else if (ret == 0) {
-    /* Timeout occurred, checking whether m_started changed */
-    return false;
-  } /* else */
-  m_socket = accept(m_serverSocket, (struct sockaddr *) &connAddr, &connAddrLen);
-  /* Reject all further connection attempts */
-  listen(m_serverSocket, 0);
-  if (m_socket == -1) {
+  int socket = accept(m_serverSocket, (struct sockaddr *) &connAddr, &connAddrLen);
+  if (socket == -1) {
     lerror << "Error while accepting." << std::endl;
-    return false;
+    return -1;
   }
   /*
    * We have a connection, now check whether it matches the one
@@ -98,20 +91,18 @@ bool TCPServerThread::attempt_connect() {
         (m_addressFamily == AF_INET6 && (memcmp(&((struct sockaddr_in6 *) &connAddr)->sin6_addr, &((struct sockaddr_in6 *) &m_remoteAddr)->sin6_addr, sizeof(struct in6_addr)) != 0))) {
       lwarn << "Got a connection attempt from " << formatSocketAddress(getSocketAddress(&connAddr))
             << ", which is not set as a remote. Restart with -p argument to override." << std::endl;
-      close(m_socket);
-      return false;
+      close(socket);
+      return -1;
      }
   }
 
   linfo << "Got a connection from " << formatSocketAddress(getSocketAddress(&connAddr)) << std::endl;
-  /* Clear the old entries in frameBuffer */
-  m_frameBuffer->reset();
-  m_decoder.reset();
   /* At this point we have a valid connection */
-  if (!setupSocket()) {
-    return false;
+  if (!setupSocket(socket)) {
+    close(socket);
+    return -1;
   }
-  return true;
+  return socket;
 }
 
 void TCPServerThread::cleanup() { close(m_serverSocket); }

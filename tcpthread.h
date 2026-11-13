@@ -23,7 +23,9 @@
 #include "connection.h"
 #include "timer.h"
 #include "decoder.h"
+#include <chrono>
 #include <mutex>
+#include <vector>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -50,6 +52,15 @@ namespace cannelloni {
     int addressFamily;
   };
 
+  struct TCPConnection {
+    int socket;
+    ConnectState state;
+    Decoder decoder;
+    /* The part of the current protocol chunk received so far */
+    uint8_t buffer[MAX_TRANSMIT_BUFFER_SIZE_BYTES];
+    ssize_t bufferedBytes;
+  };
+
   class TCPThread : public ConnectionThread {
     public:
       TCPThread(const struct debugOptions_t &debugOptions,
@@ -63,18 +74,32 @@ namespace cannelloni {
       virtual void transmitFrame(canfd_frame *frame);
 
     protected:
-      bool isConnected();
+      bool setupSocket(int socket);
+      /*
+       * Socket that signals incoming connections, or -1 when no more
+       * connections are accepted. With no connection open and nothing
+       * to listen on, run() calls attempt_connect() to connect actively.
+       */
+      virtual int listenSocket();
+      /* Returns the socket of a new connection, or -1 on failure */
+      virtual int attempt_connect() = 0;
+
+    private:
+      void waitForEvents();
+      void addConnection(int socket);
+      void closeConnection(TCPConnection &connection);
+      void receive(TCPConnection &connection);
+      void checkProtocol(TCPConnection &connection);
+      void decodeChunk(TCPConnection &connection, ssize_t len);
+      void forwardFrame(canfd_frame *frame);
+      void sendFrame(canfd_frame *frame);
       void flushFrameBuffer();
-      void disconnect();
-      bool setupSocket();
       bool setupPipe();
-      virtual bool attempt_connect() = 0;
 
     protected:
       struct debugOptions_t m_debugOptions;
       int m_serverSocket;
-      int m_socket;
-      ConnectState m_connect_state;
+      std::vector<TCPConnection> m_connections;
       Timer m_blockTimer;
       uint64_t m_rxCount;
       uint64_t m_txCount;
@@ -85,7 +110,6 @@ namespace cannelloni {
       int m_addressFamily;
 
       int m_framebufferHasDataPipe[2] = { -1, -1 };
-      Decoder m_decoder;
   };
 
   struct TCPServerThreadParams {
@@ -111,7 +135,8 @@ namespace cannelloni {
                       const struct TCPServerThreadParams &params);
 
       virtual int start();
-      virtual bool attempt_connect();
+      virtual int listenSocket();
+      virtual int attempt_connect();
       virtual void cleanup();
 
     private:
@@ -122,7 +147,10 @@ namespace cannelloni {
   public:
     TCPClientThread(const struct debugOptions_t &debugOptions,
                     const struct TCPThreadParams &params);
-    virtual bool attempt_connect();
+    virtual int attempt_connect();
     virtual void cleanup();
+
+  private:
+    std::chrono::steady_clock::time_point m_lastAttempt;
   };
 }
