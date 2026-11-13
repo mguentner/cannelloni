@@ -32,7 +32,8 @@ using namespace cannelloni;
 TCPServerThread::TCPServerThread(const struct debugOptions_t &debugOptions,
                                  const struct TCPServerThreadParams &params)
   : TCPThread(debugOptions, params.toTCPThreadParams()),
-  m_checkPeerConnect(params.checkPeer)
+  m_checkPeerConnect(params.checkPeer),
+  m_maxConnections(params.maxConnections)
 {
 
 }
@@ -61,13 +62,13 @@ int TCPServerThread::start() {
     lerror << "Could not listen" << std::endl;
     return -1;
   }
-  linfo << "Waiting for a client to connect." << std::endl;
+  linfo << "Waiting for clients to connect." << std::endl;
   return TCPThread::start();
 }
 
 int TCPServerThread::listenSocket() {
-  /* Further clients wait in the listen backlog until the connection closes */
-  if (m_connections.empty()) {
+  /* Further clients wait in the listen backlog until a connection closes */
+  if (m_connections.size() < m_maxConnections) {
     return m_serverSocket;
   }
   return -1;
@@ -99,6 +100,13 @@ int TCPServerThread::attempt_connect() {
   linfo << "Got a connection from " << formatSocketAddress(getSocketAddress(&connAddr)) << std::endl;
   /* At this point we have a valid connection */
   if (!setupSocket(socket)) {
+    close(socket);
+    return -1;
+  }
+  /* A stalled client must not block the other connections */
+  const struct timeval sendTimeout = { SEND_TIMEOUT_SECONDS, 0 };
+  if (setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout))) {
+    lerror << "Could not set send timeout." << std::endl;
     close(socket);
     return -1;
   }
