@@ -49,6 +49,14 @@ ssize_t decodeFrame(uint8_t *data, size_t len, canfd_frame *frame, DecodeState *
       return -1;
     }
     frame->len = *data;
+    /*
+     * Reject invalid frame lengths larger than CANFD_MAX_DLEN to prevent
+     * out-of-bounds writes
+     */
+    if (canfd_len(frame) > CANFD_MAX_DLEN) {
+      frame->len = 0;
+      return -1;
+    }
     /* If this is a CAN FD frame, also retrieve the flags */
     if (frame->len & CANFD_FRAME) {
       *state = STATE_FLAGS;
