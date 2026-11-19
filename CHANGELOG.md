@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.3]
+
 ### Fixed
 
 - Reject frame lengths larger than 64 bytes in the TCP decoder. A TCP
