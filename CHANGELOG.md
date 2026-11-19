@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Reject frame lengths larger than 64 bytes in the TCP decoder. A TCP
+  peer could send a larger length and cause out-of-bounds writes, the
+  same issue as CVE-2026-37539 in the UDP/SCTP parser.
+
 ## [2.1.2]
 
 ### Fixed
