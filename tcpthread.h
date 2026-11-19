@@ -23,12 +23,18 @@
 #include "connection.h"
 #include "timer.h"
 #include "decoder.h"
+#include <chrono>
 #include <mutex>
+#include <vector>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
 #define SELECT_TIMEOUT 500000
+/* A peer that does not accept data for this long gets disconnected */
+#define SEND_TIMEOUT_SECONDS 1
+/* Keeps client sockets below FD_SETSIZE, which select() requires */
+#define MAX_TCP_CLIENTS 100
 #define SIGNAL_PIPE_READ 0
 #define SIGNAL_PIPE_WRITE 1
 
@@ -50,10 +56,25 @@ namespace cannelloni {
     int addressFamily;
   };
 
+  struct TCPConnection {
+    int socket;
+    ConnectState state;
+    Decoder decoder;
+    /* The part of the current protocol chunk received so far */
+    uint8_t buffer[MAX_TRANSMIT_BUFFER_SIZE_BYTES];
+    ssize_t bufferedBytes;
+  };
+
+  /*
+   * Frames from the CAN bus go to every connection. Frames from a
+   * connection go to the CAN bus and to every other connection, as if
+   * all peers were attached to the same bus.
+   */
   class TCPThread : public ConnectionThread {
     public:
       TCPThread(const struct debugOptions_t &debugOptions,
                 const struct TCPThreadParams &params);
+      virtual ~TCPThread();
 
       virtual int start();
       virtual void cleanup() = 0;
@@ -62,18 +83,32 @@ namespace cannelloni {
       virtual void transmitFrame(canfd_frame *frame);
 
     protected:
-      bool isConnected();
+      bool setupSocket(int socket);
+      /*
+       * Socket that signals incoming connections, or -1 when no more
+       * connections are accepted. With no connection open and nothing
+       * to listen on, run() calls attempt_connect() to connect actively.
+       */
+      virtual int listenSocket();
+      /* Returns the socket of a new connection, or -1 on failure */
+      virtual int attempt_connect() = 0;
+
+    private:
+      void waitForEvents();
+      void addConnection(int socket);
+      void closeConnection(TCPConnection &connection);
+      void receive(TCPConnection &connection);
+      void checkProtocol(TCPConnection &connection);
+      void decodeChunk(TCPConnection &connection, ssize_t len);
+      void forwardFrame(TCPConnection &source, canfd_frame *frame);
+      void sendFrame(canfd_frame *frame, const TCPConnection *except);
       void flushFrameBuffer();
-      void disconnect();
-      bool setupSocket();
       bool setupPipe();
-      virtual bool attempt_connect() = 0;
 
     protected:
       struct debugOptions_t m_debugOptions;
       int m_serverSocket;
-      int m_socket;
-      ConnectState m_connect_state;
+      std::vector<TCPConnection> m_connections;
       Timer m_blockTimer;
       uint64_t m_rxCount;
       uint64_t m_txCount;
@@ -83,8 +118,7 @@ namespace cannelloni {
       struct sockaddr_storage m_remoteAddr;
       int m_addressFamily;
 
-      int m_framebufferHasDataPipe[2];
-      Decoder m_decoder;
+      int m_framebufferHasDataPipe[2] = { -1, -1 };
   };
 
   struct TCPServerThreadParams {
@@ -92,6 +126,7 @@ namespace cannelloni {
     struct sockaddr_storage &localAddr;
     int addressFamily;
     bool checkPeer;
+    size_t maxConnections;
     
     public:
 
@@ -110,18 +145,23 @@ namespace cannelloni {
                       const struct TCPServerThreadParams &params);
 
       virtual int start();
-      virtual bool attempt_connect();
+      virtual int listenSocket();
+      virtual int attempt_connect();
       virtual void cleanup();
 
     private:
       bool m_checkPeerConnect;
+      size_t m_maxConnections;
   };
 
   class TCPClientThread : public TCPThread {
   public:
     TCPClientThread(const struct debugOptions_t &debugOptions,
                     const struct TCPThreadParams &params);
-    virtual bool attempt_connect();
+    virtual int attempt_connect();
     virtual void cleanup();
+
+  private:
+    std::chrono::steady_clock::time_point m_lastAttempt;
   };
 }

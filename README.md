@@ -251,6 +251,15 @@ IP: 192.168.0.3 (Client)
 cannelloni -I vcan0 -C c -R 192.168.0.2
 ```
 
+By default the TCP server accepts one client at a time. Use `-c NUM` to
+accept up to NUM clients (at most 100). The server then acts like a
+shared CAN bus: frames from the CAN interface go to every client, and
+frames from a client go to the CAN interface and to every other client.
+Further clients wait until a slot is free. Only clients from the `-R`
+address are accepted unless `-p` is given, so clients on several hosts
+need `-p`. A client that stops reading for one second is disconnected,
+but a slow client still slows down delivery to the others.
+
 With TCP, no frame buffer is used an frames are immediately transmitted,
 frame sorting and timeouts do not apply here.
 

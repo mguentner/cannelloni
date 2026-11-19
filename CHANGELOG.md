@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The TCP server can accept multiple clients with `-c NUM`. It then acts
+  like a shared CAN bus: frames from the CAN interface go to every client,
+  and frames from a client go to the CAN interface and the other clients.
+
+### Fixed
+
+- A TCP peer disconnecting during a send no longer terminates cannelloni
+  with SIGPIPE.
+- The TCP client no longer leaks file descriptors while it retries a
+  connection.
+
 ## [2.1.3]
 
 ### Fixed
