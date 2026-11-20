@@ -258,7 +258,7 @@ bool TCPThread::setupSocket() {
    * Probe after 5 s of silence, every 2 s, and give up after 3 misses (about 11 s).
    */
   const int keepalive = 1;
-  const int keepidle = 5;
+  const int keepidle = 15;
   const int keepintvl = 2;
   const int keepcnt = 3;
   if (setsockopt(m_socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) ||
