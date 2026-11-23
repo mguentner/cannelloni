@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Enable TCP keepalive to prevent dead peer blocking reconnects, values are static
   for now, probing will start after 15s of silence, disconnect after ~ 21s
+- Resume CAN transmission once the controller leaves error-passive. Drivers
+  such as usb_8dev report this only as a warning state, so all frames
+  sent to the bus were dropped until cannelloni was restarted. Receive
+  errors alone no longer stop transmission.
 
 ## [2.1.3]
 
