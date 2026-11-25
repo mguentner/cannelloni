@@ -59,7 +59,7 @@ class CANThread : public ConnectionThread {
     int m_canSocket;
     bool m_canfd;
     /* Whether the controller currently reports the bus as usable.
-     * Set to false on bus-off / error-passive, true again on recovery.
+     * Set to false on bus-off / tx error-passive, true again on recovery.
      */
     bool m_busUsable;
     Timer m_timer;

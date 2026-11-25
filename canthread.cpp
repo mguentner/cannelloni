@@ -333,14 +333,16 @@ void CANThread::handleErrorFrame(canfd_frame *frame) {
     m_busUsable = false;
   }
   /*
-   * error-passive means frames are not getting acknowledged (broken/lonely bus)
-   * error-active means we can transmit again
+   * tx error-passive means frames are not getting acknowledged (broken/lonely bus)
+   * any other state report means we can transmit again, as some drivers
+   * (e.g. usb_8dev) report leaving error-passive only as a warning state
    */
   if (frame->can_id & CAN_ERR_CRTL) {
     uint8_t status = frame->data[1];
-    if (status & (CAN_ERR_CRTL_TX_PASSIVE | CAN_ERR_CRTL_RX_PASSIVE))
+    if (status & CAN_ERR_CRTL_TX_PASSIVE)
       m_busUsable = false;
-    else if (status & CAN_ERR_CRTL_ACTIVE)
+    else if (status & (CAN_ERR_CRTL_ACTIVE | CAN_ERR_CRTL_RX_WARNING |
+                       CAN_ERR_CRTL_TX_WARNING | CAN_ERR_CRTL_RX_PASSIVE))
       m_busUsable = true;
   }
   /* controller was restarted after a bus-off. */
