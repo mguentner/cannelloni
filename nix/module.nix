@@ -50,6 +50,11 @@ in
       default = "server";
       description = "which mode to run in (server or client)";
     };
+    maxClients = mkOption {
+      type = types.nullOr types.int;
+      default = null;
+      description = "maximum number of TCP clients, TCP server only";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -58,13 +63,14 @@ in
       mode = if cfg.mode == "server" then "s" else "c";
       transportAndMode = if cfg.transport != "udp" then (if cfg.transport == "tcp" then "-C ${mode}" else "-S ${mode}") else "";
       remoteAddress = if cfg.remoteAddress != null then "-R ${cfg.remoteAddress}" else "-p";
+      maxClients = if cfg.maxClients != null then "-c ${builtins.toString cfg.maxClients}" else "";
     in {
       description = "cannelloni";
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
-        ExecStart = "${pkgs.cannelloni}/bin/cannelloni ${transportAndMode} -I ${cfg.canInterface} -l ${builtins.toString cfg.localPort} -L ${cfg.localAddress} -r ${builtins.toString cfg.remotePort} ${remoteAddress}";
+        ExecStart = "${pkgs.cannelloni}/bin/cannelloni ${transportAndMode} -I ${cfg.canInterface} -l ${builtins.toString cfg.localPort} -L ${cfg.localAddress} -r ${builtins.toString cfg.remotePort} ${remoteAddress} ${maxClients}";
         User="cannelloni";
         DynamicUser=true;
        };

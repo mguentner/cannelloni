@@ -51,6 +51,7 @@
       checks = forAllSystems (system: {
         sctp = nixpkgsFor.${system}.callPackage ./nix/tests/sctp.nix { };
         tcp = nixpkgsFor.${system}.callPackage ./nix/tests/tcp.nix { };
+        tcp-multiple-clients = nixpkgsFor.${system}.callPackage ./nix/tests/tcp_multiple_clients.nix { };
         udp = nixpkgsFor.${system}.callPackage ./nix/tests/udp.nix { };
         netdown = nixpkgsFor.${system}.callPackage ./nix/tests/netdown.nix { };
       });

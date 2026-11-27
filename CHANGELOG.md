@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The TCP server can accept multiple clients with `-c NUM`. It then acts
+  like a shared CAN bus: frames from the CAN interface go to every client,
+  and frames from a client go to the CAN interface and the other clients.
+  The server now disconnects a client that cannot keep up, also with the
+  default single client, instead of blocking.
+
 ### Fixed
 
 - Enable TCP keepalive to prevent dead peer blocking reconnects, values are static
@@ -15,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such as usb_8dev report this only as a warning state, so all frames
   sent to the bus were dropped until cannelloni was restarted. Receive
   errors alone no longer stop transmission.
+- A TCP peer disconnecting during a send no longer terminates cannelloni
+  with SIGPIPE.
+- The TCP client no longer leaks file descriptors while it retries a
+  connection.
 
 ## [2.1.3]
 
